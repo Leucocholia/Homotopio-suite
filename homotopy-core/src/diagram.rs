@@ -1,0 +1,1077 @@
+use std::{
+    cell::RefCell,
+    convert::{From, Into, TryFrom},
+    fmt,
+    hash::Hash,
+};
+
+use hashconsing::{HConsed, HConsign, HashConsign};
+use homotopy_common::hash::{FastHashMap, FastHashSet};
+use once_cell::unsync::OnceCell;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+use crate::{
+    attach::attach,
+    common::{
+        Boundary, BoundaryPath, DimensionError, Direction, Generator, Height, Label, RegularHeight,
+        SliceIndex, WithDirection,
+    },
+    rewrite::{Cospan, Rewrite, Rewrite0, RewriteN},
+    signature::{GeneratorInfo, Invertibility, Signature},
+    Orientation,
+};
+
+thread_local! {
+    static DIAGRAM_FACTORY: RefCell<HConsign<DiagramInternal>> =
+        RefCell::new(HConsign::with_capacity(37));
+}
+
+#[derive(Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub enum Diagram {
+    Diagram0(Diagram0),
+    DiagramN(DiagramN),
+}
+
+impl Diagram {
+    #[must_use]
+    pub fn size(&self) -> Option<usize> {
+        match self {
+            Self::Diagram0(_) => None,
+            Self::DiagramN(d) => Some(d.size()),
+        }
+    }
+
+    #[must_use]
+    pub fn max_generator(&self) -> Diagram0 {
+        match self {
+            Self::Diagram0(d) => *d,
+            Self::DiagramN(d) => d.max_generator(),
+        }
+    }
+
+    /// Returns all the generators mentioned by this diagram.
+    #[must_use]
+    pub fn generators(&self) -> FastHashMap<Generator, FastHashSet<Orientation>> {
+        use Diagram::{Diagram0, DiagramN};
+        fn add_generators(
+            diagram: &Diagram,
+            generators: &mut FastHashMap<Generator, FastHashSet<Orientation>>,
+            visited: &mut FastHashSet<Diagram>,
+        ) {
+            match diagram {
+                Diagram0(d) => {
+                    generators
+                        .entry(d.generator)
+                        .or_default()
+                        .insert(d.orientation);
+                    visited.insert(diagram.clone());
+                }
+                DiagramN(d) => {
+                    for slice in d.slices() {
+                        if !visited.contains(&slice) {
+                            add_generators(&slice, generators, visited);
+                            visited.insert(slice);
+                        }
+                    }
+                }
+            }
+        }
+        let mut gs: FastHashMap<Generator, FastHashSet<Orientation>> = Default::default();
+        let mut visited: FastHashSet<Self> = Default::default();
+        add_generators(self, &mut gs, &mut visited);
+        gs
+    }
+
+    #[must_use]
+    pub fn dimension(&self) -> usize {
+        match self {
+            Self::Diagram0(_) => 0,
+            Self::DiagramN(d) => d.dimension(),
+        }
+    }
+
+    #[must_use]
+    pub fn identity(self) -> DiagramN {
+        DiagramN::new_unsafe(self, vec![])
+    }
+
+    #[must_use]
+    pub fn weak_identity(self) -> DiagramN {
+        let dimension = self.dimension();
+        DiagramN::new_unsafe(
+            self,
+            vec![Cospan {
+                forward: Rewrite::identity(dimension),
+                backward: Rewrite::identity(dimension),
+            }],
+        )
+    }
+
+    #[must_use]
+    pub fn embeds(&self, diagram: &Self, embedding: &[usize]) -> bool {
+        use Diagram::{Diagram0, DiagramN};
+        match (self, diagram) {
+            (Diagram0(g0), Diagram0(g1)) => g0 == g1,
+            (Diagram0(_), DiagramN(_)) => false,
+            (DiagramN(d), _) => d.embeds(diagram, embedding),
+        }
+    }
+
+    #[must_use]
+    pub fn embeddings(&self, diagram: &Self) -> Embeddings {
+        use Diagram::{Diagram0, DiagramN};
+        match (self, diagram) {
+            (Diagram0(g0), Diagram0(g1)) if g0 == g1 => {
+                Embeddings(Box::new(std::iter::once(vec![])))
+            }
+            (Diagram0(_), _) => Embeddings(Box::new(std::iter::empty())),
+            (DiagramN(d), _) => d.embeddings(diagram),
+        }
+    }
+
+    pub(crate) fn rewrite_forward(self, rewrite: &Rewrite) -> Result<Self, RewritingError> {
+        match (self, rewrite) {
+            (Self::Diagram0(d), Rewrite::Rewrite0(r)) => d.rewrite_forward(r).map(Into::into),
+            (Self::DiagramN(d), Rewrite::RewriteN(r)) => d.rewrite_forward(r).map(Into::into),
+            (d, r) => Err(RewritingError::Dimension(d.dimension(), r.dimension())),
+        }
+    }
+
+    pub(crate) fn rewrite_backward(self, rewrite: &Rewrite) -> Result<Self, RewritingError> {
+        match (self, rewrite) {
+            (Self::Diagram0(d), Rewrite::Rewrite0(r)) => d.rewrite_backward(r).map(Into::into),
+            (Self::DiagramN(d), Rewrite::RewriteN(r)) => d.rewrite_backward(r).map(Into::into),
+            (d, r) => Err(RewritingError::Dimension(d.dimension(), r.dimension())),
+        }
+    }
+
+    /// Removes the framing information belonging to the generators with given id.
+    #[must_use]
+    pub fn remove_framing(&self, generator: Generator) -> Self {
+        match self {
+            Self::Diagram0(g) => Self::Diagram0(*g),
+            Self::DiagramN(d) => Self::DiagramN(DiagramN::new_unsafe(
+                d.source().remove_framing(generator),
+                d.cospans()
+                    .iter()
+                    .map(|cs| cs.map(|r| r.remove_framing(generator)))
+                    .collect(),
+            )),
+        }
+    }
+
+    /// Reflect a diagram according to the given directions.
+    ///
+    /// The codimension specifies that the n-diagram occurs inside a larger (n + k)-diagram so we ignore the first k directions.
+    /// This is needed for the recursive implementation. However, in practice, the function should be called with codimension 0.
+    #[must_use]
+    pub fn reflect(&self, directions: &[Direction], codimension: usize) -> Self {
+        assert_eq!(directions.len(), self.dimension() + codimension);
+        match self {
+            Self::Diagram0(d) => d.reflect(directions).into(),
+            Self::DiagramN(d) => d.reflect(directions, codimension).into(),
+        }
+    }
+
+    pub fn invertibility(&self, signature: &impl Signature) -> Invertibility {
+        self.generators()
+            .keys()
+            .filter(|g| g.dimension >= self.dimension())
+            .map(|g| signature.generator_info(*g).unwrap().invertibility())
+            .min()
+            .unwrap_or(Invertibility::Invertible)
+    }
+
+    #[must_use]
+    pub fn contains_point(&self, point: &[Height], embedding: &[RegularHeight]) -> bool {
+        use Diagram::{Diagram0, DiagramN};
+
+        match (point.split_first(), self) {
+            (None, _) => true,
+            (Some(_), Diagram0(_)) => false,
+            (Some((height, point)), DiagramN(diagram)) => {
+                let (shift, embedding) = embedding.split_first().unwrap_or((&0, &[]));
+                let shift = Height::Regular(*shift);
+
+                if *height < shift {
+                    return false;
+                }
+
+                let height = Height::from(usize::from(*height) - usize::from(shift));
+
+                match diagram.slice(height) {
+                    Some(slice) => slice.contains_point(point, embedding),
+                    None => false,
+                }
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn suspend(&self, s: Generator, t: Generator) -> DiagramN {
+        match self {
+            Self::Diagram0(d) => d.suspend(s, t),
+            Self::DiagramN(d) => d.suspend(s, t),
+        }
+    }
+
+    #[must_use]
+    pub fn replace(&self, from: Generator, to: Generator, oriented: bool) -> Self {
+        match self {
+            Self::Diagram0(d) => Self::Diagram0(d.replace(from, to)),
+            Self::DiagramN(d) => Self::DiagramN(d.replace(from, to, oriented)),
+        }
+    }
+}
+
+pub(crate) fn globularity(s: &Diagram, t: &Diagram) -> bool {
+    use Diagram::{Diagram0, DiagramN};
+    match (s, t) {
+        (Diagram0(_), Diagram0(_)) => true,
+        (Diagram0(_), DiagramN(_)) | (DiagramN(_), Diagram0(_)) => false,
+        (DiagramN(s), DiagramN(t)) => s.source() == t.source() && s.target() == t.target(),
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct Diagram0 {
+    pub generator: Generator,
+    pub orientation: Orientation,
+}
+
+impl Diagram0 {
+    #[must_use]
+    pub const fn new(generator: Generator, orientation: Orientation) -> Self {
+        Self {
+            generator,
+            orientation,
+        }
+    }
+
+    #[must_use]
+    pub fn identity(self) -> DiagramN {
+        Diagram::from(self).identity()
+    }
+
+    pub(crate) const fn suspended(self) -> Self {
+        Self {
+            generator: self.generator.suspended(),
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub fn suspend(&self, s: Generator, t: Generator) -> DiagramN {
+        assert_eq!(s.dimension, 0);
+        assert_eq!(t.dimension, 0);
+
+        if s == t && self.generator == s {
+            self.identity()
+        } else {
+            assert_ne!(s, self.generator);
+            assert_ne!(t, self.generator);
+
+            let forward: Rewrite = Rewrite0::new(
+                s,
+                self.suspended(),
+                Some(Label::new(
+                    BoundaryPath(Boundary::Source, self.generator.dimension),
+                    Default::default(),
+                )),
+            )
+            .into();
+            let backward: Rewrite = Rewrite0::new(
+                t,
+                self.suspended(),
+                Some(Label::new(
+                    BoundaryPath(Boundary::Target, self.generator.dimension),
+                    Default::default(),
+                )),
+            )
+            .into();
+
+            let source: Self = s.into();
+            let cospan = Cospan { forward, backward };
+            DiagramN::new(source.into(), vec![cospan])
+        }
+    }
+
+    #[must_use]
+    pub fn replace(&self, from: Generator, to: Generator) -> Self {
+        if self.generator == from {
+            Self::new(to, self.orientation)
+        } else {
+            *self
+        }
+    }
+
+    #[must_use]
+    pub fn orientation_transform(self, k: Orientation) -> Self {
+        Self::new(self.generator, self.orientation * k)
+    }
+
+    pub(crate) fn rewrite_forward(self, rewrite: &Rewrite0) -> Result<Self, RewritingError> {
+        match rewrite.boundaries() {
+            None => Ok(self),
+            Some((source, target)) => {
+                if self == source {
+                    Ok(target)
+                } else {
+                    Err(RewritingError::Incompatible)
+                }
+            }
+        }
+    }
+
+    pub(crate) fn rewrite_backward(self, rewrite: &Rewrite0) -> Result<Self, RewritingError> {
+        match rewrite.boundaries() {
+            None => Ok(self),
+            Some((source, target)) => {
+                if self == target {
+                    Ok(source)
+                } else {
+                    Err(RewritingError::Incompatible)
+                }
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn reflect(&self, directions: &[Direction]) -> Self {
+        self.orientation_transform(
+            directions
+                .iter()
+                .copied()
+                .rev()
+                .take(self.generator.dimension)
+                .map(Orientation::from)
+                .product(),
+        )
+    }
+}
+
+impl From<Generator> for Diagram0 {
+    fn from(generator: Generator) -> Self {
+        Self::new(generator, Orientation::Positive)
+    }
+}
+
+#[derive(Clone, Eq, PartialEq, Hash)]
+pub struct DiagramN(HConsed<DiagramInternal>);
+
+impl Serialize for DiagramN {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_newtype_struct("DiagramN", self.0.get())
+    }
+}
+
+impl<'de> Deserialize<'de> for DiagramN {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Deserialize::deserialize(deserializer)
+            .map(|d| Self(DIAGRAM_FACTORY.with_borrow_mut(|factory| factory.mk(d))))
+    }
+}
+
+impl DiagramN {
+    pub fn from_generator(
+        generator: Generator,
+        source: impl Into<Diagram>,
+        target: impl Into<Diagram>,
+    ) -> Result<Self, NewDiagramError> {
+        use crate::Boundary::{Source, Target};
+
+        let source: Diagram = source.into();
+        let target: Diagram = target.into();
+
+        if source.dimension() != target.dimension() || generator.dimension != source.dimension() + 1
+        {
+            return Err(NewDiagramError::Dimension);
+        }
+
+        if !globularity(&source, &target) {
+            return Err(NewDiagramError::NonGlobular);
+        }
+
+        let mut seen = Default::default();
+        let mut store = Default::default();
+        let mut rewrite_cache = Default::default();
+        let cospan = Cospan {
+            forward: Rewrite::cone_over_generator(
+                generator,
+                source.clone(),
+                BoundaryPath(Source, 0),
+                &[],
+                (&mut seen, &mut store, true),
+                &mut rewrite_cache,
+            ),
+            backward: Rewrite::cone_over_generator(
+                generator,
+                target,
+                BoundaryPath(Target, 0),
+                &[],
+                (&mut seen, &mut store, true),
+                &mut rewrite_cache,
+            ),
+        };
+
+        Ok(Self::new_unsafe(source, vec![cospan]))
+    }
+
+    #[must_use]
+    pub fn new(source: Diagram, cospans: Vec<Cospan>) -> Self {
+        let diagram = Self::new_unsafe(source, cospans);
+        if cfg!(feature = "safety-checks") {
+            diagram.check(false).expect("Diagram is malformed");
+        }
+        diagram
+    }
+
+    /// Unsafe version of `new` which does not check if the diagram is well-formed.
+    #[inline]
+    pub(crate) fn new_unsafe(source: Diagram, cospans: Vec<Cospan>) -> Self {
+        Self(DIAGRAM_FACTORY.with_borrow_mut(|factory| {
+            factory.mk(DiagramInternal {
+                source,
+                cospans,
+                max_generator: OnceCell::new(),
+            })
+        }))
+    }
+
+    #[must_use]
+    pub fn map<F, G>(&self, f: F, g: G) -> Self
+    where
+        F: Fn(&Diagram) -> Diagram,
+        G: Fn(&Rewrite) -> Rewrite,
+    {
+        let cospans: Vec<_> = self.cospans().iter().map(|c| c.map(|r| g(r))).collect();
+        Self::new(f(&self.source()), cospans)
+    }
+
+    #[must_use]
+    pub fn suspend(&self, s: Generator, t: Generator) -> Self {
+        self.map(|d| d.suspend(s, t).into(), |r| r.suspend(s, t).into())
+    }
+
+    #[must_use]
+    pub fn replace(&self, from: Generator, to: Generator, oriented: bool) -> Self {
+        self.map(
+            |d| d.replace(from, to, oriented),
+            |r| r.replace(from, to, oriented),
+        )
+    }
+
+    pub(crate) fn collect_garbage() {
+        DIAGRAM_FACTORY.with_borrow_mut(|factory| factory.collect_to_fit());
+    }
+
+    /// The dimension of the diagram, which is at least one.
+    #[must_use]
+    pub fn dimension(&self) -> usize {
+        self.0.source.dimension() + 1
+    }
+
+    /// The source boundary of the diagram.
+    #[must_use]
+    pub fn source(&self) -> Diagram {
+        self.0.source.clone()
+    }
+
+    /// The target boundary of the diagram.
+    ///
+    /// This function rewrites the source slice of the diagram with all of the diagram's cospans.
+    #[must_use]
+    pub fn target(&self) -> Diagram {
+        let mut slice = self.0.source.clone();
+
+        for cospan in &self.0.cospans {
+            slice = slice.rewrite_forward(&cospan.forward).unwrap();
+            slice = slice.rewrite_backward(&cospan.backward).unwrap();
+        }
+
+        slice
+    }
+
+    /// An iterator over all of the diagram's slices.
+    #[must_use]
+    pub fn slices(&self) -> Slices {
+        Slices::new(self)
+    }
+
+    pub fn regular_slices(&self) -> impl Iterator<Item = Diagram> {
+        self.slices().step_by(2)
+    }
+
+    pub fn singular_slices(&self) -> impl Iterator<Item = Diagram> {
+        self.slices().skip(1).step_by(2)
+    }
+
+    /// Access a particular slice.
+    ///
+    /// This function rewrites the source until the slice of the desired height is reached.  When
+    /// all of the diagram's slices are needed, use [slices](crate::diagram::DiagramN::slices) to avoid
+    /// quadratic complexity.
+    pub fn slice<I>(&self, index: I) -> Option<Diagram>
+    where
+        I: Into<SliceIndex>,
+    {
+        match index.into() {
+            SliceIndex::Boundary(Boundary::Source) => Some(self.source()),
+            SliceIndex::Boundary(Boundary::Target) => Some(self.target()),
+            SliceIndex::Interior(height) => self.slices().nth(height.into()),
+        }
+    }
+
+    pub(crate) fn rewrite_forward(self, rewrite: &RewriteN) -> Result<Self, RewritingError> {
+        if self.dimension() != rewrite.dimension() {
+            return Err(RewritingError::Dimension(
+                self.dimension(),
+                rewrite.dimension(),
+            ));
+        }
+
+        let mut cospans = self.cospans().to_vec();
+        let mut offset: isize = 0;
+
+        for cone in rewrite.cones() {
+            let start = (cone.index as isize + offset) as usize;
+            let stop = (cone.index as isize + cone.len() as isize + offset) as usize;
+            if &cospans[start..stop] != cone.source() {
+                return Err(RewritingError::Incompatible);
+            }
+            cospans.splice(start..stop, std::iter::once(cone.target().clone()));
+            offset -= cone.len() as isize - 1;
+        }
+
+        Ok(Self::new_unsafe(self.source(), cospans))
+    }
+
+    pub(crate) fn rewrite_backward(self, rewrite: &RewriteN) -> Result<Self, RewritingError> {
+        if self.dimension() != rewrite.dimension() {
+            return Err(RewritingError::Dimension(
+                self.dimension(),
+                rewrite.dimension(),
+            ));
+        }
+
+        let mut cospans = self.cospans().to_vec();
+
+        for cone in rewrite.cones() {
+            let start = cone.index;
+            let stop = cone.index + 1;
+            if &cospans[start] != cone.target() {
+                return Err(RewritingError::Incompatible);
+            }
+            cospans.splice(start..stop, cone.source().iter().cloned());
+        }
+
+        Ok(Self::new_unsafe(self.source(), cospans))
+    }
+
+    #[must_use]
+    pub fn cospans(&self) -> &[Cospan] {
+        &self.0.cospans
+    }
+
+    /// Check if [diagram] embeds into this diagram via the specified [embedding].
+    #[must_use]
+    pub fn embeds(&self, diagram: &Diagram, embedding: &[usize]) -> bool {
+        use Diagram::{Diagram0, DiagramN};
+
+        let (regular, rest) = match embedding.split_first() {
+            Some((regular, rest)) => (*regular, rest),
+            None => (0, embedding),
+        };
+
+        let height = SliceIndex::Interior(Height::Regular(regular));
+
+        let Some(slice) = self.slice(height) else {
+            return false;
+        };
+
+        match diagram {
+            Diagram0(_) => slice.embeds(diagram, rest),
+            DiagramN(d) => {
+                use std::cmp::Ordering::{Equal, Greater, Less};
+                match d.dimension().cmp(&self.dimension()) {
+                    Greater => false,
+                    Less => slice.embeds(diagram, rest),
+                    Equal => {
+                        slice.embeds(&d.source(), rest)
+                            && self.0.cospans.get(regular..d.size() + regular)
+                                == Some(
+                                    &d.0.cospans.iter().map(|c| c.pad(rest)).collect::<Vec<_>>(),
+                                )
+                    }
+                }
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn embeddings(&self, diagram: &Diagram) -> Embeddings {
+        use std::cmp::Ordering;
+
+        match self.dimension().cmp(&diagram.dimension()) {
+            Ordering::Less => Embeddings(Box::new(std::iter::empty())),
+            Ordering::Equal => {
+                let diagram = Self::try_from(diagram.clone()).unwrap();
+                let embeddings = self.embeddings_slice(diagram.source());
+                let haystack = self.clone();
+                Embeddings(Box::new(embeddings.filter(move |embedding| {
+                    let (start, rest) = embedding.split_first().unwrap();
+                    haystack.cospans().get(*start..diagram.size() + *start)
+                        == Some(
+                            &diagram
+                                .cospans()
+                                .iter()
+                                .map(|c| c.pad(rest))
+                                .collect::<Vec<_>>(),
+                        )
+                })))
+            }
+            Ordering::Greater => Embeddings(Box::new(self.embeddings_slice(diagram.clone()))),
+        }
+    }
+
+    fn embeddings_slice(&self, diagram: Diagram) -> impl Iterator<Item = Vec<usize>> {
+        self.regular_slices()
+            .enumerate()
+            .flat_map(move |(index, slice)| {
+                slice.embeddings(&diagram).map(move |mut emb| {
+                    emb.insert(0, index);
+                    emb
+                })
+            })
+    }
+
+    /// The size of the diagram is the number of singular slices or equivalently the number of
+    /// cospans in the diagram.
+    #[must_use]
+    pub fn size(&self) -> usize {
+        self.0.cospans.len()
+    }
+
+    /// Determine the first maximum-dimensional generator.
+    #[must_use]
+    pub fn max_generator(&self) -> Diagram0 {
+        *self.0.max_generator.get_or_init(|| {
+            std::iter::once(self.source().max_generator())
+                .chain(self.cospans().iter().filter_map(Cospan::max_generator))
+                .rev()
+                .max_by_key(|d| d.generator.dimension)
+                .unwrap()
+        })
+    }
+
+    #[must_use]
+    pub fn identity(self) -> Self {
+        Diagram::from(self).identity()
+    }
+
+    // TODO: This needs better documentation
+
+    /// Attach a [diagram] to this diagram at the specified [boundary] and the given [embedding].
+    pub fn attach(
+        &self,
+        diagram: &Self,
+        boundary: Boundary,
+        embedding: &[usize],
+    ) -> Result<Self, AttachmentError> {
+        let depth = self
+            .dimension()
+            .checked_sub(diagram.dimension())
+            .ok_or(DimensionError)?;
+
+        attach(self, BoundaryPath(boundary, depth), |slice| {
+            if slice.embeds(&diagram.slice(boundary.flip()).unwrap(), embedding) {
+                Ok(diagram.cospans().iter().map(|c| c.pad(embedding)).collect())
+            } else {
+                Err(AttachmentError::IncompatibleAttachment)
+            }
+        })
+    }
+
+    #[must_use]
+    pub fn inverse(&self) -> Self {
+        Self::new(
+            self.target(),
+            self.cospans().iter().map(Cospan::inverse).rev().collect(),
+        )
+    }
+
+    #[must_use]
+    pub fn reflect(&self, directions: &[Direction], codimension: usize) -> Self {
+        assert_eq!(directions.len(), self.dimension() + codimension);
+
+        if directions[codimension..]
+            .iter()
+            .all(|d| *d == Direction::Forward)
+        {
+            return self.clone();
+        }
+
+        // Compute all regular slices once to avoid recomputation.
+        let slices = self.regular_slices().collect::<Vec<_>>();
+
+        let i = match directions[codimension] {
+            Direction::Forward => 0,
+            Direction::Backward => self.size(),
+        };
+
+        Self::new(
+            slices[i].reflect(directions, codimension + 1),
+            self.cospans()
+                .iter()
+                .enumerate()
+                .map(|(i, cs)| cs.reflect(&slices[i], &slices[i + 1], directions, codimension))
+                .with_direction(directions[codimension])
+                .collect(),
+        )
+    }
+
+    #[must_use]
+    pub fn behead(&self, max_height: RegularHeight) -> Self {
+        Self::new(self.source(), self.cospans()[..max_height].to_vec())
+    }
+
+    #[must_use]
+    pub fn befoot(&self, min_height: RegularHeight) -> Self {
+        Self::new(
+            self.slice(Height::Regular(min_height)).unwrap(),
+            self.cospans()[min_height..].to_vec(),
+        )
+    }
+
+    #[must_use]
+    pub fn boundary(&self, boundary_path: BoundaryPath) -> Option<Diagram> {
+        let mut diagram = self.clone();
+
+        for _ in 0..boundary_path.depth() {
+            diagram = diagram.source().try_into().ok()?;
+        }
+
+        diagram.slice(boundary_path.boundary())
+    }
+}
+
+#[derive(Clone, Eq, Serialize, Deserialize)]
+struct DiagramInternal {
+    source: Diagram,
+    cospans: Vec<Cospan>,
+    #[serde(skip)]
+    max_generator: OnceCell<Diagram0>,
+}
+
+impl PartialEq for DiagramInternal {
+    fn eq(&self, other: &Self) -> bool {
+        self.source == other.source && self.cospans == other.cospans
+    }
+}
+
+impl Hash for DiagramInternal {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.source.hash(state);
+        self.cospans.hash(state);
+    }
+}
+
+impl fmt::Debug for Diagram0 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Diagram0")
+            .field(&self.generator)
+            .field(&self.orientation)
+            .finish()
+    }
+}
+
+impl fmt::Debug for DiagramN {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DiagramN")
+            .field("source", &self.0.source)
+            .field("cospans", &self.0.cospans)
+            .finish()
+    }
+}
+
+impl fmt::Debug for Diagram {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Diagram0(d) => d.fmt(f),
+            Self::DiagramN(d) => d.fmt(f),
+        }
+    }
+}
+
+impl From<Diagram0> for Diagram {
+    fn from(diagram: Diagram0) -> Self {
+        Self::Diagram0(diagram)
+    }
+}
+
+impl From<DiagramN> for Diagram {
+    fn from(diagram: DiagramN) -> Self {
+        Self::DiagramN(diagram)
+    }
+}
+
+impl TryFrom<Diagram> for Diagram0 {
+    type Error = DimensionError;
+
+    fn try_from(diagram: Diagram) -> Result<Self, Self::Error> {
+        match diagram {
+            Diagram::Diagram0(diagram) => Ok(diagram),
+            Diagram::DiagramN(_) => Err(DimensionError),
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a Diagram> for Diagram0 {
+    type Error = DimensionError;
+
+    fn try_from(diagram: &'a Diagram) -> Result<Self, Self::Error> {
+        match diagram {
+            Diagram::Diagram0(diagram) => Ok(*diagram),
+            Diagram::DiagramN(_) => Err(DimensionError),
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a mut Diagram> for &'a mut Diagram0 {
+    type Error = DimensionError;
+
+    fn try_from(diagram: &'a mut Diagram) -> Result<Self, Self::Error> {
+        match diagram {
+            Diagram::Diagram0(diagram) => Ok(diagram),
+            Diagram::DiagramN(_) => Err(DimensionError),
+        }
+    }
+}
+
+impl TryFrom<Diagram> for DiagramN {
+    type Error = DimensionError;
+
+    fn try_from(diagram: Diagram) -> Result<Self, Self::Error> {
+        match diagram {
+            Diagram::Diagram0(_) => Err(DimensionError),
+            Diagram::DiagramN(diagram) => Ok(diagram),
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a Diagram> for &'a DiagramN {
+    type Error = DimensionError;
+
+    fn try_from(diagram: &'a Diagram) -> Result<Self, Self::Error> {
+        match diagram {
+            Diagram::Diagram0(_) => Err(DimensionError),
+            Diagram::DiagramN(diagram) => Ok(diagram),
+        }
+    }
+}
+
+impl<'a> TryFrom<&'a mut Diagram> for &'a mut DiagramN {
+    type Error = DimensionError;
+
+    fn try_from(diagram: &'a mut Diagram) -> Result<Self, Self::Error> {
+        match diagram {
+            Diagram::Diagram0(_) => Err(DimensionError),
+            Diagram::DiagramN(diagram) => Ok(diagram),
+        }
+    }
+}
+
+/// Iterator over a diagram's slices. Constructed via [DiagramN::slices].
+pub struct Slices {
+    current: Option<Diagram>,
+    direction: Direction,
+    cospans: Vec<Cospan>,
+}
+
+impl Slices {
+    fn new(diagram: &DiagramN) -> Self {
+        Self {
+            current: Some(diagram.source()),
+            direction: Direction::Forward,
+            cospans: diagram.cospans().iter().rev().cloned().collect(),
+        }
+    }
+}
+
+impl Iterator for Slices {
+    type Item = Diagram;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.cospans.is_empty() {
+            return self.current.take();
+        }
+
+        let current = self.current.as_ref()?;
+
+        let next = match self.direction {
+            Direction::Forward => {
+                let cospan = self.cospans.last().unwrap();
+                self.direction = Direction::Backward;
+                current.clone().rewrite_forward(&cospan.forward).unwrap()
+            }
+            Direction::Backward => {
+                let cospan = self.cospans.pop().unwrap();
+                self.direction = Direction::Forward;
+                current.clone().rewrite_backward(&cospan.backward).unwrap()
+            }
+        };
+
+        std::mem::replace(&mut self.current, Some(next))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len(), Some(self.len()))
+    }
+}
+
+impl ExactSizeIterator for Slices {
+    fn len(&self) -> usize {
+        if self.current.is_none() {
+            0
+        } else {
+            match self.direction {
+                Direction::Forward => self.cospans.len() * 2 + 1,
+                Direction::Backward => self.cospans.len() * 2,
+            }
+        }
+    }
+}
+
+impl std::iter::FusedIterator for Slices {}
+
+pub struct Embeddings(Box<dyn Iterator<Item = Vec<RegularHeight>>>);
+
+impl Iterator for Embeddings {
+    type Item = Vec<RegularHeight>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next()
+    }
+}
+
+impl std::iter::FusedIterator for Embeddings {}
+
+#[derive(Debug, Error)]
+pub enum NewDiagramError {
+    #[error("non-compatible dimensions when creating diagram")]
+    Dimension,
+
+    #[error("can't create diagram with non-globular boundaries")]
+    NonGlobular,
+}
+
+#[derive(Debug, Error)]
+pub enum AttachmentError {
+    #[error("cannot attach diagram of a higher dimension")]
+    Dimension(#[from] DimensionError),
+
+    #[error("failed to attach incompatible diagrams")]
+    IncompatibleAttachment,
+}
+
+#[derive(Clone, Debug, Error)]
+pub enum RewritingError {
+    #[error("can't rewrite diagram of dimension {0} along a rewrite of dimension {1}")]
+    Dimension(usize, usize),
+
+    #[error("failed to rewrite along incompatible rewrite")]
+    Incompatible,
+}
+
+#[cfg(test)]
+mod test {
+    use std::{convert::TryInto, error::Error};
+
+    use super::*;
+    use crate::signature::SignatureBuilder;
+
+    fn assert_point_ids<D>(diagram: &D, points: &[(&[usize], usize)])
+    where
+        D: Into<Diagram> + Clone,
+    {
+        for (point, id) in points {
+            let mut slice = diagram.clone().into();
+
+            for p in *point {
+                slice = DiagramN::try_from(slice)
+                    .unwrap()
+                    .slice(Height::from(*p))
+                    .unwrap();
+            }
+
+            let d: Diagram0 = slice.try_into().unwrap();
+            assert_eq!(d.generator.id, *id);
+        }
+    }
+
+    #[test]
+    fn associativity_points() -> Result<(), Box<dyn Error>> {
+        use Boundary::{Source, Target};
+
+        let mut signature = SignatureBuilder::default();
+        let x = signature.add_zero();
+        let f = signature.add(x, x)?;
+        let ff = f.attach(&f, Target, &[])?;
+        let m = signature.add(ff, f)?;
+        let left = m.attach(&m, Source, &[0])?;
+
+        assert_point_ids(
+            &left,
+            &[
+                (&[0, 0], 0),
+                (&[0, 1], 1),
+                (&[0, 2], 0),
+                (&[0, 3], 1),
+                (&[0, 4], 0),
+                (&[0, 5], 1),
+                (&[0, 6], 0),
+                (&[1, 0], 0),
+                (&[1, 1], 2),
+                (&[1, 2], 0),
+                (&[1, 3], 1),
+                (&[1, 4], 0),
+                (&[2, 0], 0),
+                (&[2, 1], 1),
+                (&[2, 2], 0),
+                (&[2, 3], 1),
+                (&[2, 4], 0),
+                (&[3, 0], 0),
+                (&[3, 1], 2),
+                (&[3, 2], 0),
+                (&[4, 0], 0),
+                (&[4, 1], 1),
+                (&[4, 2], 0),
+            ],
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn scalar() {
+        let mut signature = SignatureBuilder::default();
+        let x = signature.add_zero();
+        let f = signature.add(x.identity(), x.identity()).unwrap();
+
+        assert_eq!(f.source(), x.identity().into());
+        assert_eq!(f.target(), x.identity().into());
+
+        let cospan = &f.cospans()[0];
+        let forward: &RewriteN = (&cospan.forward).try_into().unwrap();
+
+        assert_eq!(forward.singular_image(0), 1);
+        assert_eq!(forward.regular_preimage(0), 0..2);
+    }
+}

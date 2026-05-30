@@ -1,0 +1,20 @@
+[package]
+name = "homotopy-common"
+version = "0.1.0"
+authors = ["Nathan Corbyn <me@nathancorbyn.com>"]
+license = "BSD-3-Clause"
+repository = "https://github.com/homotopy-io/homotopy-rs"
+edition = "2021"
+
+[package.metadata.nix]
+build = true
+
+[dependencies]
+rustc-hash = "1.1.0"
+petgraph = "0.6.4"
+serde = { features = ["derive"], version = "1.0.203" }
+
+[dev-dependencies]
+cargo-husky = { features = ["precommit-hook", "run-cargo-check", "run-cargo-test", "run-cargo-fmt", "run-cargo-clippy"], version = "1.5.0" }
+
+[features]

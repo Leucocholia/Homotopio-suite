@@ -1,0 +1,28 @@
+[workspace]
+members = [
+  "homotopy-core",
+  "homotopy-common",
+  "homotopy-dsl",
+  "homotopy-model",
+  "homotopy-gl",
+  "homotopy-graphics",
+  "homotopy-web",
+  "homotopy-cli",
+]
+resolver = "2"
+
+[profile.release]
+# This makes the compiled code faster and smaller, but it makes compiling slower,
+# so it's only enabled in release mode.
+lto = true
+
+[profile.dev]
+
+[workspace.metadata.nix]
+cachix = { name = "homotopy-io", key = "homotopy-io.cachix.org-1:W30ZjMFglzQwLtem4DQXbFqaMqhsee53pGvQPp82kCc=" }
+
+# Patches need to be in workspace root
+[patch.crates-io]
+highs = { git = "https://github.com/regular-citizen/highs" }
+katex = { git = "https://github.com/regular-citizen/katex-rs" }
+petgraph = { git = "https://github.com/NickHu/petgraph", branch = "filter_map" }

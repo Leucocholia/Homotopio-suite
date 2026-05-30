@@ -1,0 +1,36 @@
+[package]
+name = "homotopy-model"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+instant = { version = "0.1.13"}
+homotopy-common = { path = "../homotopy-common" }
+homotopy-core = { path = "../homotopy-core" }
+homotopy-graphics = { path = "../homotopy-graphics" }
+quote = "1.0.36"
+serde = { version = "1.0.203", features = ["derive"] }
+syn = "2.0.68"
+paste = "1.0.15"
+rmp-serde = "1.3.0"
+serde_json = "1.0.118"
+
+palette = { version = "0.7.6", features = ["serializing"] }
+
+tracing = "0.1.40"
+
+thiserror = "1.0.61"
+obake = { version = "1.0.5", features = ["serde"] }
+im = { version = "15.1.0", features = ["serde"] }
+arrayvec = "0.7.4"
+
+[dev-dependencies]
+insta = "1.39.0"
+
+[package.metadata.nix]
+build = true
+
+[features]
+default = []

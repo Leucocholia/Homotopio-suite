@@ -1,0 +1,13 @@
+[package]
+name = "homotopy-dsl"
+description = "Readable source language for homotopy.io diagrams"
+version = "0.1.0"
+authors = ["Homotopy.io Extended Editor Contributors"]
+license = "BSD-3-Clause"
+edition = "2021"
+
+[dependencies]
+homotopy-core = { path = "../homotopy-core" }
+homotopy-graphics = { path = "../homotopy-graphics" }
+homotopy-model = { path = "../homotopy-model" }
+serde = { version = "1.0.203", features = ["derive"] }
