@@ -36,7 +36,7 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Setup cachix
-        uses: cachix/cachix-action@v16
+        uses: cachix/cachix-action@v17
         with:
           name: homotopy-io
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
