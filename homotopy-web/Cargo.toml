@@ -25,7 +25,7 @@ homotopy-dsl = { path = "../homotopy-dsl" }
 homotopy-model = { path = "../homotopy-model" }
 homotopy-graphics = { path = "../homotopy-graphics" }
 homotopy-gl = { path = "../homotopy-gl" }
-chrono = "0.4.38"
+chrono = "0.4.44"
 closure = "0.3.0"
 futures = "0.3.30"
 js-sys = "0.3.68"
