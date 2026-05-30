@@ -14,7 +14,7 @@ homotopy-common = { path = "../homotopy-common" }
 anyhow = "1.0.86"
 bimap = "0.6.3"
 getrandom = { version = "0.2.15", features = ["js"] }
-hashconsing = "1.6.0"
+hashconsing = "1.7.0"
 highway = "1.2.0"
 im = { version = "15.1.0", features = ["serde"] }
 tracing = "0.1.40"
