@@ -11,5 +11,9 @@ result
 # Compiled site
 dist
 
+# Generated QA artifacts
+artifacts/
+test-results/
+
 *.swp
 .DS_STORE
