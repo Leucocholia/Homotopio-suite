@@ -16,7 +16,6 @@ pub struct Props {
 
 pub enum Msg {
     Changed(String),
-    Apply,
     RetryEditor,
 }
 
@@ -90,10 +89,6 @@ impl Component for SourcePanel {
                 ctx.props().dispatch.emit(Action::SetSource(source));
                 false
             }
-            Msg::Apply => {
-                ctx.props().dispatch.emit(Action::ApplySource);
-                false
-            }
             Msg::RetryEditor => {
                 self.retry = None;
                 true
@@ -115,11 +110,7 @@ impl Component for SourcePanel {
         let warnings = ctx.props().diagnostics.len().saturating_sub(errors);
 
         html! {
-            <aside class="source-panel">
-                <div class="panel-header">
-                    <span class="panel-title">{"Source"}</span>
-                    <button class="source-panel__apply" onclick={ctx.link().callback(|_| Msg::Apply)}>{"Apply"}</button>
-                </div>
+            <section class="source-panel">
                 <div class="source-panel__editor" ref={self.host.clone()} />
                 <div class="diagnostics">
                     <div class="diagnostics__header">
@@ -141,7 +132,7 @@ impl Component for SourcePanel {
                         </div>
                     })}
                 </div>
-            </aside>
+            </section>
         }
     }
 

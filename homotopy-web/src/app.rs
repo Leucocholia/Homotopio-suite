@@ -38,6 +38,7 @@ mod signature_stylesheet;
 mod source;
 mod stash;
 mod tex;
+mod workbench;
 mod workspace;
 
 pub enum Message {
@@ -268,16 +269,13 @@ impl App {
                     <ToasterComponent timeout={3000} />
                 </div>
                 <div class="boundary__and__workspace">
-                    <library::LibraryView
-                        presets={presets::PRESETS}
-                        active_preset={state.active_preset.clone()}
-                        dispatch={dispatch.clone()}
-                    />
                     {boundary_preview}
                     <div class="editor-workspace">
                         {workspace}
                     </div>
-                    <source::SourcePanel
+                    <workbench::WorkbenchPanel
+                        presets={presets::PRESETS}
+                        active_preset={state.active_preset.clone()}
                         source={state.source.clone()}
                         diagnostics={state.source_diagnostics.clone()}
                         symbols={state.source_symbols.clone()}

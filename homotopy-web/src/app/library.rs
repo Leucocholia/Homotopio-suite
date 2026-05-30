@@ -10,6 +10,8 @@ pub struct Props {
     pub presets: &'static [Preset],
     pub active_preset: Option<String>,
     pub dispatch: Callback<model::Action>,
+    #[prop_or_default]
+    pub on_load_preset: Callback<()>,
 }
 
 #[function_component]
@@ -19,10 +21,7 @@ pub fn LibraryView(props: &Props) -> Html {
     categories.dedup();
 
     html! {
-        <aside class="library-panel">
-            <div class="panel-header">
-                <span class="panel-title">{"Library"}</span>
-            </div>
+        <section class="library-panel">
             <div class="library-panel__content">
                 {for categories.into_iter().map(|category| {
                     html! {
@@ -32,10 +31,14 @@ pub fn LibraryView(props: &Props) -> Html {
                                 let id = preset.id.to_owned();
                                 let active = props.active_preset.as_deref() == Some(preset.id);
                                 let dispatch = props.dispatch.clone();
+                                let on_load_preset = props.on_load_preset.clone();
                                 html! {
                                     <button
                                         class={classes!("preset-row", active.then_some("preset-row--active"))}
-                                        onclick={Callback::from(move |_| dispatch.emit(Action::LoadPreset(id.clone())))}
+                                        onclick={Callback::from(move |_| {
+                                            dispatch.emit(Action::LoadPreset(id.clone()));
+                                            on_load_preset.emit(());
+                                        })}
                                     >
                                         <span class="preset-row__title">{preset.title}</span>
                                         <span class="preset-row__description">{preset.description}</span>
@@ -53,6 +56,6 @@ pub fn LibraryView(props: &Props) -> Html {
                 <span>{"Step 2 of 5"}</span>
                 <p>{"Edit a schema once, then instantiate it with different cells to create concrete diagrams."}</p>
             </div>
-        </aside>
+        </section>
     }
 }

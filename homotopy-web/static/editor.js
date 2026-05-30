@@ -8,6 +8,8 @@ function fallbackEditor() {
       textarea.spellcheck = false;
       textarea.value = value;
       textarea.addEventListener("input", () => onChange(textarea.value));
+      textarea.addEventListener("keydown", (event) => event.stopPropagation());
+      textarea.addEventListener("keyup", (event) => event.stopPropagation());
       parent.replaceChildren(textarea);
       const handle = { textarea, parent, onChange, diagnostics: [] };
       handles.push(handle);
@@ -185,6 +187,16 @@ Promise.all([
               syntaxHighlighting(homotopyHighlightStyle),
               theme,
               EditorView.lineWrapping,
+              EditorView.domEventHandlers({
+                keydown(event) {
+                  event.stopPropagation();
+                  return false;
+                },
+                keyup(event) {
+                  event.stopPropagation();
+                  return false;
+                },
+              }),
               EditorView.updateListener.of((update) => {
                 if (update.docChanged) {
                   onChange(update.state.doc.toString());

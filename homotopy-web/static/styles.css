@@ -177,11 +177,93 @@ button, .button {
   letter-spacing: 0;
 }
 
+.workbench-panel {
+  width: 430px;
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid #e5e7eb;
+  background: #ffffff;
+  color: #1f2937;
+  box-sizing: border-box;
+}
+
+.workbench-panel__header {
+  height: 46px;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px;
+  border-bottom: 1px solid #e5e7eb;
+  box-sizing: border-box;
+  background: #ffffff;
+}
+
+.workbench-tabs {
+  display: inline-flex;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.workbench-tab {
+  min-width: 82px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 0;
+  border-right: 1px solid #cbd5e1;
+  border-radius: 0;
+  background: transparent;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.workbench-tab:last-child {
+  border-right: 0;
+}
+
+.workbench-tab--active {
+  background: #0f766e;
+  color: #ffffff;
+}
+
+.workbench-tab__badge {
+  min-width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #be123c;
+  color: #ffffff;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.workbench-panel__content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
 .library-panel,
 .source-panel {
   display: flex;
   flex-direction: column;
+  flex: 1;
   height: 100%;
+  width: 100%;
   min-width: 0;
   background: #ffffff;
   color: #1f2937;
@@ -190,8 +272,7 @@ button, .button {
 }
 
 .library-panel {
-  width: 280px;
-  border-right: 1px solid #e5e7eb;
+  border: 0;
 }
 
 .library-panel__content {
@@ -271,8 +352,7 @@ button, .button {
 }
 
 .source-panel {
-  width: 430px;
-  border-left: 1px solid #e5e7eb;
+  border: 0;
 }
 
 .source-panel__apply {
@@ -287,7 +367,8 @@ button, .button {
 }
 
 .source-panel__editor {
-  height: 45%;
+  flex: 0 0 52%;
+  height: auto;
   min-height: 260px;
   border-bottom: 1px solid #e5e7eb;
   overflow: hidden;
@@ -397,18 +478,14 @@ button, .button {
 }
 
 @media (max-width: 1100px) {
-  .library-panel {
-    width: 230px;
-  }
-
-  .source-panel {
+  .workbench-panel {
     width: 360px;
   }
 }
 
 @media (max-width: 860px) {
-  .library-panel {
-    display: none;
+  .workbench-panel {
+    width: 330px;
   }
 }
 
@@ -424,11 +501,15 @@ button, .button {
     border-right: 0;
   }
 
-  .source-panel {
+  .workbench-panel {
     width: 100%;
     min-height: 52%;
     border-left: 0;
     border-top: 1px solid #e5e7eb;
+  }
+
+  .workbench-panel__header {
+    padding: 0 14px;
   }
 
   .source-panel__editor {
