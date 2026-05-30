@@ -38,7 +38,6 @@ mod signature_stylesheet;
 mod source;
 mod stash;
 mod tex;
-mod workbench;
 mod workspace;
 
 pub enum Message {
@@ -264,6 +263,10 @@ impl App {
                     proof={proof.clone()}
                     options={state.options.clone()}
                     remote_project_metadata={state.remote_project_metadata.clone()}
+                    active_preset={state.active_preset.clone()}
+                    source={state.source.clone()}
+                    source_diagnostics={state.source_diagnostics.clone()}
+                    source_symbols={state.source_symbols.clone()}
                 />
                 <div class="toaster">
                     <ToasterComponent timeout={3000} />
@@ -273,14 +276,6 @@ impl App {
                     <div class="editor-workspace">
                         {workspace}
                     </div>
-                    <workbench::WorkbenchPanel
-                        presets={presets::PRESETS}
-                        active_preset={state.active_preset.clone()}
-                        source={state.source.clone()}
-                        diagnostics={state.source_diagnostics.clone()}
-                        symbols={state.source_symbols.clone()}
-                        dispatch={dispatch.clone()}
-                    />
                 </div>
                 <Modal id="panic" header="Unexpected crash" persistent=true>
                     {info::get_panic_message()}

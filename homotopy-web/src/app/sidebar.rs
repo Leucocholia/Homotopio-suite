@@ -3,6 +3,8 @@ use wasm_bindgen::{closure::Closure, JsCast};
 use yew::prelude::*;
 use yew_macro::function_component;
 
+use homotopy_dsl::{Diagnostic, SymbolInfo};
+
 use crate::{
     app::{account::RemoteProjectMetadata, attach::AttachView, keybindings::Keybindings},
     components::{
@@ -266,6 +268,10 @@ pub struct SidebarProps {
     pub options: Option<model::Selectables>,
     pub dispatch: Callback<model::Action>,
     pub remote_project_metadata: Option<RemoteProjectMetadata>,
+    pub active_preset: Option<String>,
+    pub source: String,
+    pub source_diagnostics: Vec<Diagnostic>,
+    pub source_symbols: Vec<SymbolInfo>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -392,8 +398,7 @@ impl Sidebar {
                 drawer.view(
                     model_dispatch,
                     &sidebar_dispatch,
-                    &ctx.props().proof,
-                    &ctx.props().remote_project_metadata,
+                    ctx.props(),
                     self.last_drawer_width,
                     self.drawer_view_size,
                 )

@@ -1,16 +1,13 @@
 use yew::{callback::Callback, prelude::*};
 
-use super::{DrawerViewSize, Sidebar, SidebarButton, SidebarDrawer, SidebarMsg};
+use super::{DrawerViewSize, Sidebar, SidebarButton, SidebarDrawer, SidebarMsg, SidebarProps};
 #[cfg(any(debug_assertions, feature = "show_debug_panel"))]
 use crate::app::debug::DebugView;
 use crate::{
     app::{
-        account::{AccountView, RemoteProjectMetadata},
-        image_export::ImageExportView,
-        project::ProjectView,
-        settings::SettingsView,
-        signature::SignatureView,
-        stash::StashView,
+        account::AccountView, image_export::ImageExportView, library::LibraryView, presets,
+        project::ProjectView, settings::SettingsView, signature::SignatureView,
+        source::SourcePanel, stash::StashView,
     },
     components::Visible,
     model::{
@@ -49,8 +46,7 @@ macro_rules! declare_sidebar_drawers {
                 self,
                 model_dispatch: &Callback<model::Action>,
                 sidebar_dispatch: &Callback<SidebarMsg>,
-                proof: &Proof,
-                remote_project_metadata: &Option<RemoteProjectMetadata>,
+                props: &SidebarProps,
                 initial_width: i32,
                 drawer_view_size: DrawerViewSize,
             ) -> Html {
@@ -70,10 +66,10 @@ macro_rules! declare_sidebar_drawers {
                                     $(icon={$top_icon})?
                                     $(on_click={
                                         let action = $action;
-                                        action(proof)
+                                        action(&props.proof)
                                     })?
                                 >
-                                    {body(model_dispatch, proof, drawer_view_size, remote_project_metadata)}
+                                    {body(model_dispatch, sidebar_dispatch, props, drawer_view_size)}
                                 </SidebarDrawer>
                             }
                         }
@@ -116,11 +112,11 @@ declare_sidebar_drawers! {
         "Account",
         "account",
         "account_circle",
-        |dispatch, proof: &Proof, _, remote_project_metadata: &Option<RemoteProjectMetadata>| html! {
+        |dispatch, _, props: &SidebarProps, _| html! {
             <AccountView
                 dispatch={dispatch}
-                proof={proof.clone()}
-                remote_project_metadata={remote_project_metadata.clone()}
+                proof={props.proof.clone()}
+                remote_project_metadata={props.remote_project_metadata.clone()}
             />
         },
         min_width: 250,
@@ -130,22 +126,37 @@ declare_sidebar_drawers! {
         "Project",
         "project",
         "info",
-        |dispatch, proof: &Proof, _, _| html! {
+        |dispatch, _, props: &SidebarProps, _| html! {
             <ProjectView
                 dispatch={dispatch}
-                metadata={proof.metadata.clone()}
+                metadata={props.proof.metadata.clone()}
             />
         },
         min_width: 250,
+    }
+
+    DRAWER_LIBRARY {
+        "Library",
+        "library",
+        "menu_book",
+        |dispatch, sidebar_dispatch: &Callback<SidebarMsg>, props: &SidebarProps, _| html! {
+            <LibraryView
+                presets={presets::PRESETS}
+                active_preset={props.active_preset.clone()}
+                dispatch={dispatch}
+                on_load_preset={sidebar_dispatch.reform(|_| SidebarMsg::Toggle(Some(NavDrawer::DRAWER_SOURCE)))}
+            />
+        },
+        min_width: 280,
     }
 
     DRAWER_SIGNATURE {
         "Signature",
         "signature",
         "list",
-        |dispatch, proof: &Proof, drawer_view_size: DrawerViewSize, _| html! {
+        |dispatch, _, props: &SidebarProps, drawer_view_size: DrawerViewSize| html! {
             <SignatureView
-                signature={proof.signature.clone()}
+                signature={props.proof.signature.clone()}
                 dispatch={dispatch}
                 drawer_view_size={drawer_view_size}
             />
@@ -155,15 +166,35 @@ declare_sidebar_drawers! {
         top_icon_action: |proof: &Proof| model::Action::Proof(Action::EditSignature(SignatureEdit::NewFolder(proof.signature.as_tree().root()))),
     }
 
+    DRAWER_SOURCE {
+        "Source",
+        "source",
+        "code",
+        |dispatch: &Callback<model::Action>, _, props: &SidebarProps, _| html! {
+            <div class="source-drawer">
+                <div class="source-drawer__actions">
+                    <button class="source-panel__apply" onclick={dispatch.reform(|_| model::Action::ApplySource)}>{"Apply"}</button>
+                </div>
+                <SourcePanel
+                    source={props.source.clone()}
+                    diagnostics={props.source_diagnostics.clone()}
+                    symbols={props.source_symbols.clone()}
+                    dispatch={dispatch}
+                />
+            </div>
+        },
+        min_width: 320,
+    }
+
     DRAWER_STASH {
         "Stash",
         "stash",
         "bookmarks",
-        |dispatch, proof: &Proof, _, _| html! {
+        |dispatch, _, props: &SidebarProps, _| html! {
             <StashView
-                stash={proof.stash.clone()}
+                stash={props.proof.stash.clone()}
                 dispatch={dispatch}
-                signature={proof.signature.clone()}
+                signature={props.proof.signature.clone()}
             />
         },
         min_width: 250,
@@ -173,7 +204,7 @@ declare_sidebar_drawers! {
         "Image export",
         "ImageExport",
         "output",
-        |dispatch, proof: &Proof, _, _| match proof.workspace.as_ref() {
+        |dispatch, _, props: &SidebarProps, _| match props.proof.workspace.as_ref() {
             None => html! {
                 <p>{"There is nothing to export."}</p>
             },
@@ -203,8 +234,8 @@ declare_sidebar_drawers! {
         "Debug",
         "debug",
         "bug_report",
-        |dispatch, proof: &Proof, _, _| html! {
-            <DebugView proof={proof.clone()} dispatch={dispatch} />
+        |dispatch, _, props: &SidebarProps, _| html! {
+            <DebugView proof={props.proof.clone()} dispatch={dispatch} />
         },
         min_width: 250,
     }
