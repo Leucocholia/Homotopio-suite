@@ -1,58 +1,80 @@
-# About the project
+# Homotopio Suite
 
-The homotopy.io proof assistant allows the construction of composite morphisms in a finitely-generated semistrict n-category, via a point-and-click user interface. Composites are rendered as 2d and 3d geometries, and can be visualised in 4d as movies of 3d geometries. Beyond its features as a visual proof assistant, homotopy.io can also be used as an effective tool to typeset string diagrams: any 2d diagram constructed in the proof assistant can be exported with ease into LaTeX/TikZ and SVG, with experimental support for manim.
+Homotopio Suite is an independent experiment based on a snapshot of the public
+[`homotopy-io/homotopy-rs`](https://github.com/homotopy-io/homotopy-rs) source.
+It is not an official homotopy.io project, is not maintained by the homotopy.io
+team, and should not be read as representing `beta.homotopy.io`.
 
-The proof assistant is implemented in the Rust programming language, and compiled to WebAssembly to run in the web browser.
+The goal of this fork is to explore a more source-driven and didactic diagram
+editor for larger, reusable homotopy.io-style diagrams.
 
-For a description of how the tool works, please see the [arXiv paper](https://arxiv.org/abs/2402.13179) or [nLab page](https://ncatlab.org/nlab/show/homotopy.io). A more recent tutorial may be found [here](./TUTORIAL.md).
+## What This Adds
 
-The master branch is hosted live here: https://beta.homotopy.io/
+- A readable DSL for declaring cells, schemas, macros, instantiations, and the
+  diagram to show.
+- A browser source editor powered by CodeMirror 6, with diagnostics and syntax
+  highlighting.
+- Hygienic schema/macro expansion for reusable diagram shapes, such as an
+  adjunction schema that can be instantiated for concrete 0-cells.
+- A built-in reference library with presets for basics, adjunctions,
+  equivalences, braids, and macro composition.
+- A `.hio` project bundle format containing `manifest.json`, `proof.hom`,
+  `source.homl`, and optional didactic metadata.
+- Continued compatibility with existing `.hom`, `.json`, and `.zip` proof import
+  paths from the upstream application.
 
-# Developing
+## Relationship To homotopy.io
 
-The easiest way to set up a development environment is with [Nix](https://nixos.org/).
+The original homotopy.io proof assistant lets users construct composite
+morphisms in finitely generated semistrict n-categories through a point-and-click
+interface. It renders composites as 2D and 3D geometries, supports 4D
+visualisation as movies of 3D geometries, and can export 2D diagrams to
+LaTeX/TikZ and SVG.
 
-Running
+This repository preserves the upstream BSD-3-Clause source license and keeps
+the upstream citation information below. The changes here are independent fork
+work layered on top of a source snapshot, not upstream history or an official
+deployment.
 
+For background on homotopy.io itself, see the
+[arXiv paper](https://arxiv.org/abs/2402.13179), the
+[nLab page](https://ncatlab.org/nlab/show/homotopy.io), and the included
+[tutorial](./TUTORIAL.md).
+
+## Development
+
+See [DEVELOPMENT.md](./DEVELOPMENT.md) for local, Docker, and optional HiGHS
+solver build notes.
+
+Common local checks:
+
+```bash
+cargo test -p homotopy-dsl
+cargo check -p homotopy-web --target wasm32-unknown-unknown
+cargo check -p homotopy-web --tests --target wasm32-unknown-unknown
 ```
-nix develop github:homotopy-io/homotopy-rs
+
+To build the browser app locally:
+
+```bash
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli
+cargo build -p homotopy-web --target wasm32-unknown-unknown
+mkdir -p dist
+cp -r homotopy-web/static/* dist/
+wasm-bindgen --out-dir dist --no-typescript --target web \
+  target/wasm32-unknown-unknown/debug/homotopy_web.wasm
 ```
 
-will spawn a development shell with Rust, and all the necessary tooling required to build the project. Additionally, this is the exact same environment that the CI uses, so providing that it is passing, this cannot fail:
+Serve `dist/` with COOP/COEP headers. The original Nix, devcontainer, and
+`cargo make` workflows from upstream are still present for contributors who want
+to use them.
 
-![Build status](https://github.com/homotopy-io/homotopy-rs/actions/workflows/ci.yml/badge.svg)
+## Citing The Upstream Project
 
-Any recent commit can be run with
+The upstream tool should be cited as follows:
 
-```
-nix run github:homotopy-io/homotopy-rs?rev=X
-```
-
-Please adhere to Rust stable and lint all code with `nix run github:homotopy-io/homotopy-rs#lint`.
-
-## Development server
-
-From the root of the project, run `cargo make serve`. This will build the app into `/dist`, and concurrently run a development server on http://localhost:5000, which refreshes whenever the code changes.
-Alternatively, the project can be built with `nix build`, with the development server invoked by `sfz -r result/`, where `result/` is the nix-build output folder.
-
-## Nix & GitHub Actions
-
-This project uses GitHub Actions CI, for automating builds, testing, and deployment. GitHub Actions uses Nix to build, and the resulting compilation artifacts should like-for-like match those generated by `nix-build`. In particular, this allows binary artifacts (including witnesses of tests being run!) to be substituted across machines, in the standard way supported by Nix. Nix builds are cached on [Cachix](https://app.cachix.org/cache/homotopy-io). In other words, `nix-build | cachix push homotopy-io` allows the CI to skip compilation and test running.
-
-Dependencies are updated via [Dependabot](https://github.com/dependabot), and are automatically merged (provided that all tests pass).
-Keep the Cargo.lock updated with any changes to the various Cargo.toml, e.g. by running `cargo check` inside a dev-shell, as not doing so may cause problems with the build.
-
-## Firebase
-
-Builds are deployed to Firebase for hosting, by the GitHub Actions CI. https://beta.homotopy.io mirrors `master`, and any pull request generates a [Firebase Hosting preview](https://firebase.google.com/docs/hosting/test-preview-deploy#preview-channels) site, of the form homotopy-rs--homotopy-io-X.web.app.
-
-In future, Firebase will also act as online storage for user projects.
-
-# Citing
-
-The tool should be cited as follows:
-
-```
+```bibtex
 @article{hio,
   title={homotopy.io: a proof assistant for finitely-presented globular $n$-categories},
   author={Corbyn, Nathan and Heidemann, Lukas and Hu, Nick and Sarti, Chiara and Tataru, Calin and Vicary, Jamie},
@@ -61,23 +83,23 @@ The tool should be cited as follows:
 }
 ```
 
-# License
+## License
 
-Unless explicitly stated otherwise, all contributions are licensed under the following terms.
+Unless explicitly stated otherwise, source code in this repository is licensed
+under the [BSD 3-Clause License](LICENSE), inherited from the upstream
+homotopy.io source snapshot.
 
-## Source
-
-homotopy.io source code is published under the terms of the [BSD 3-Clause License](LICENSE).
-
-## Documentation
-
-<a rel="license" href="http://creativecommons.org/licenses/by/4.0/"><img alt="Creative Commons License" style="border-width:0" src="https://i.creativecommons.org/l/by/4.0/88x31.png" /></a><br />homotopy.io documentation is licensed under a <a rel="license" href="http://creativecommons.org/licenses/by/4.0/">Creative Commons Attribution 4.0 International License</a>.
+The upstream documentation is licensed under a
+[Creative Commons Attribution 4.0 International License](http://creativecommons.org/licenses/by/4.0/).
 
 ## Dependencies
 
-We use the HiGHS linear programming solver for the layout algorithm:
+The upstream project uses the HiGHS linear programming solver for the layout
+algorithm:
 
-Parallelizing the dual revised simplex method, Q. Huangfu and J. A. J. Hall, Mathematical Programming Computation, 10 (1), 119-142, 2018. DOI: 10.1007/s12532-017-0130-5
+Parallelizing the dual revised simplex method, Q. Huangfu and J. A. J. Hall,
+Mathematical Programming Computation, 10 (1), 119-142, 2018.
+DOI: 10.1007/s12532-017-0130-5
 
-We use the [keyboard-css](https://github.com/shhdharmen/keyboard-css) library.
-
+The project also uses the [keyboard-css](https://github.com/shhdharmen/keyboard-css)
+library.
