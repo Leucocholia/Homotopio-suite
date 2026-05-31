@@ -15,8 +15,6 @@ pub struct Props {
 pub enum IconSize {
     Icon18,
     Icon24,
-    Icon36,
-    /* Icon48, */
 }
 
 #[function_component]
@@ -27,9 +25,6 @@ pub fn Icon(props: &Props) -> Html {
         match props.size {
             IconSize::Icon18 => "md-18",
             IconSize::Icon24 => "md-24",
-            IconSize::Icon36 => "md-36",
-            /* IconSize::Icon36 => "md-36",
-             * IconSize::Icon48 => "md-48", */
         },
         props.class,
     );

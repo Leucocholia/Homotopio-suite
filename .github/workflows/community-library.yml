@@ -1,0 +1,29 @@
+name: Community Library
+
+on:
+  pull_request:
+    paths:
+      - "community-library/**"
+      - "homotopy-dsl/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/community-library.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "community-library/**"
+      - "homotopy-dsl/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/community-library.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Validate community library
+        run: cargo run -p homotopy-dsl --bin homotopy-library -- community-library --check

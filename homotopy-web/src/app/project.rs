@@ -134,7 +134,7 @@ impl Component for ProjectView {
                                 .filter_map(|name| {
                                     let path = std::path::Path::new(name);
                                     (!path.starts_with("__MACOSX/")
-                                        && path.extension().map_or(false, |ext| {
+                                        && path.extension().is_some_and(|ext| {
                                             ext.eq_ignore_ascii_case("hom")
                                                 || ext.eq_ignore_ascii_case("json")
                                         }))

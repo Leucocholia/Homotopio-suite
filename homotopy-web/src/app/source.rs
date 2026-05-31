@@ -50,7 +50,7 @@ impl Component for SourcePanel {
             && self
                 .host
                 .cast::<web_sys::Element>()
-                .map_or(false, |element| element.child_element_count() == 0)
+                .is_some_and(|element| element.child_element_count() == 0)
         {
             if let Some(editor) = self.editor.take() {
                 let _ = bridge_call("destroy", &[editor]);

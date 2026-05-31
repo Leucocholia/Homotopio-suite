@@ -18,9 +18,9 @@ use crate::{
 };
 
 #[allow(clippy::mem_forget, clippy::future_not_send)] // due to wasm_bindgen
-pub mod account;
 mod attach;
 mod boundary;
+pub(crate) mod community_library;
 #[cfg(any(debug_assertions, feature = "show_debug_panel"))]
 mod debug;
 pub(crate) mod diagram_gl;
@@ -59,6 +59,10 @@ impl Component for App {
 
     #[allow(unused_variables)]
     fn create(ctx: &Context<Self>) -> Self {
+        if let Some(document) = web_sys::window().and_then(|window| window.document()) {
+            document.set_title("Homotopio Suite");
+        }
+
         let mut state = model::State::default();
         if let Err(error) = state.update(model::Action::ApplySource) {
             tracing::warn!("Could not load default source preset: {error}");
@@ -67,8 +71,6 @@ impl Component for App {
         let mut signature_stylesheet = SignatureStylesheet::new();
         signature_stylesheet.mount();
         signature_stylesheet.update(state.proof().signature.clone());
-
-        Self::load_project_from_url_path(ctx);
 
         Self {
             state,
@@ -170,58 +172,6 @@ impl App {
         self.before_unload = Some(before_unload);
     }
 
-    // TODO: replace this with yew-router
-    fn load_project_from_url_path(ctx: &Context<Self>) {
-        let path_str = web_sys::window().unwrap().location().pathname().unwrap();
-        let path = &path_str.split('/').collect::<Vec<&str>>()[1..];
-        if path[0] == "p" && path.len() == 2 {
-            // Published project
-            tracing::debug!("Load published project {}", path[1]);
-            let tag = path[1].to_owned();
-            ctx.link().send_future_batch(async move {
-                if let Some((project, blob)) =
-                    account::download_published_project(&tag, 1 /* TODO */).await
-                {
-                    vec![
-                        Message::BlockingDispatch(model::Action::SetRemoteProjectMetadata(Some(
-                            project,
-                        ))),
-                        Message::BlockingDispatch(model::Action::Proof(
-                            model::proof::Action::ImportProof(blob.into()),
-                        )),
-                    ]
-                } else {
-                    // failed, reset the url
-                    model::update_window_url_path("/");
-                    Vec::default()
-                }
-            });
-        } else if path[0] == "u" && path.len() == 3 {
-            // Personal projects
-            let uid = path[1].to_owned();
-            let id = path[2].to_owned();
-            tracing::debug!("Load personal project {uid}/{id}");
-            ctx.link().send_future_batch(async move {
-                if let Some((project, blob)) = account::download_personal_project(&uid, &id).await {
-                    vec![
-                        Message::BlockingDispatch(model::Action::SetRemoteProjectMetadata(Some(
-                            project,
-                        ))),
-                        Message::BlockingDispatch(model::Action::Proof(
-                            model::proof::Action::ImportProof(blob.into()),
-                        )),
-                    ]
-                } else {
-                    // failed, reset the url
-                    model::update_window_url_path("/");
-                    Vec::default()
-                }
-            });
-        } else {
-            model::update_window_url_path("/");
-        }
-    }
-
     #[allow(clippy::let_underscore_untyped)]
     fn render(ctx: &Context<Self>, state: &model::State, loading: bool) -> Html {
         let proof = state.proof();
@@ -262,7 +212,6 @@ impl App {
                     dispatch={dispatch.clone()}
                     proof={proof.clone()}
                     options={state.options.clone()}
-                    remote_project_metadata={state.remote_project_metadata.clone()}
                     active_preset={state.active_preset.clone()}
                     source={state.source.clone()}
                     source_diagnostics={state.source_diagnostics.clone()}

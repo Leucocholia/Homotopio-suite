@@ -10,18 +10,21 @@ editor for larger, reusable homotopy.io-style diagrams.
 
 ## What This Adds
 
-- A readable DSL for declaring cells, schemas, macros, instantiations, and the
-  diagram to show.
+- A readable DSL for declaring cells, generative `struct`s, applicative
+  `schema`/`property` declarations, instantiations, and the diagram to show.
 - A browser source editor powered by CodeMirror 6, with diagnostics and syntax
   highlighting.
-- Hygienic schema/macro expansion for reusable diagram shapes, such as an
-  adjunction schema that can be instantiated for concrete 0-cells.
+- Hygienic expansion for reusable diagram shapes. `struct` creates fresh
+  packaged data, while `schema`/`property` gives canonical instances for the
+  same arguments.
 - A built-in reference library with presets for basics, adjunctions,
-  equivalences, braids, and macro composition.
+  equivalences, braids, idempotent structures, proofs, and macro composition.
+- Per-preset didactic notes in the Library drawer, with an empty curated
+  community preset lane ready for future reviewed examples.
 - A `.hio` project bundle format containing `manifest.json`, `proof.hom`,
   `source.homl`, and optional didactic metadata.
-- Continued compatibility with existing `.hom`, `.json`, and `.zip` proof import
-  paths from the upstream application.
+- A local-first browser app: no Firebase account, publishing, or remote project
+  sync surface is included in this fork.
 
 ## Relationship To homotopy.io
 
@@ -46,10 +49,14 @@ For background on homotopy.io itself, see the
 See [DEVELOPMENT.md](./DEVELOPMENT.md) for local, Docker, and optional HiGHS
 solver build notes.
 
+See [COMMUNITY_LIBRARY.md](./COMMUNITY_LIBRARY.md) for public preset submission
+instructions.
+
 Common local checks:
 
 ```bash
 cargo test -p homotopy-dsl
+cargo run -p homotopy-dsl --bin homotopy-library -- community-library --check
 cargo check -p homotopy-web --target wasm32-unknown-unknown
 cargo check -p homotopy-web --tests --target wasm32-unknown-unknown
 ```

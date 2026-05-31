@@ -33,7 +33,7 @@ impl<T> NodeData<T> {
     }
 
     #[inline]
-    pub fn inner_mut(&mut self) -> &mut T {
+    pub const fn inner_mut(&mut self) -> &mut T {
         &mut self.data
     }
 
@@ -75,7 +75,7 @@ impl<T> NodeData<T> {
     }
 
     #[inline]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.children.is_empty()
     }
 }
@@ -422,7 +422,7 @@ pub struct AncestorIterator<'a, T> {
     current: Option<Node>,
 }
 
-impl<'a, T> Iterator for AncestorIterator<'a, T> {
+impl<T> Iterator for AncestorIterator<'_, T> {
     type Item = Node;
 
     #[inline]
@@ -433,14 +433,14 @@ impl<'a, T> Iterator for AncestorIterator<'a, T> {
     }
 }
 
-impl<'a, T> FusedIterator for AncestorIterator<'a, T> {}
+impl<T> FusedIterator for AncestorIterator<'_, T> {}
 
 pub struct DescendantsIterator<'a, T> {
     tree: &'a Tree<T>,
     to_visit: VecDeque<Node>,
 }
 
-impl<'a, T> Iterator for DescendantsIterator<'a, T> {
+impl<T> Iterator for DescendantsIterator<'_, T> {
     type Item = Node;
 
     #[inline]
@@ -455,4 +455,4 @@ impl<'a, T> Iterator for DescendantsIterator<'a, T> {
     }
 }
 
-impl<'a, T> FusedIterator for DescendantsIterator<'a, T> {}
+impl<T> FusedIterator for DescendantsIterator<'_, T> {}

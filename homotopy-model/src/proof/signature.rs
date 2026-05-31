@@ -142,6 +142,26 @@ impl Signature {
         self.0.push_onto(self.0.root(), item);
     }
 
+    pub fn insert_item_onto(&mut self, node: Node, item: SignatureItem) -> Option<Node> {
+        self.0.push_onto(node, item)
+    }
+
+    #[must_use]
+    pub const fn root_node(&self) -> Node {
+        self.0.root()
+    }
+
+    pub fn create_folder(&mut self, parent: Node, name: String) -> Option<Node> {
+        self.0.push_onto(
+            parent,
+            SignatureItem::Folder(FolderInfo {
+                id: self.next_folder_id(),
+                name,
+                open: true,
+            }),
+        )
+    }
+
     fn find_node(&self, generator: Generator) -> Option<Node> {
         self.0.iter().find_map(|(node, item)| match item.inner() {
             SignatureItem::Item(info) if info.generator == generator => Some(node),

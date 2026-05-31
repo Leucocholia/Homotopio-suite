@@ -4,6 +4,7 @@ pub struct Preset {
     pub title: &'static str,
     pub category: &'static str,
     pub description: &'static str,
+    pub lesson: &'static str,
     pub source: &'static str,
     pub tags: &'static [&'static str],
 }
@@ -14,6 +15,7 @@ pub const PRESETS: &[Preset] = &[
         title: "Basics",
         category: "Basics",
         description: "Two objects, a pair of arrows, and an identity witness.",
+        lesson: "Start with named cells. A 0-cell is an object, a 1-cell has a source and target, and a 2-cell relates parallel 1-dimensional diagrams.",
         source: r#"title "Basics";
 cell A;
 cell B;
@@ -28,12 +30,13 @@ show loop;
         id: "adjunction",
         title: "Adjunction",
         category: "Adjunction",
-        description: "A reusable schema that creates a concrete adjunction between two 0-cells.",
+        description: "A reusable structure that creates concrete adjunction data between two 0-cells.",
+        lesson: "`struct` creates fresh data each time it is used. This is the right mode for an adjunction, since two adjunctions with the same endpoints need not be identical.",
         source: r#"title "Adjunction";
 cell A;
 cell B;
 
-schema Adjunction(A: cell<0>, B: cell<0>) {
+struct Adjunction(A: cell<0>, B: cell<0>) {
   cell F: A -> B;
   cell G: B -> A;
   cell unit: id(A) -> F * G;
@@ -43,18 +46,19 @@ schema Adjunction(A: cell<0>, B: cell<0>) {
 use Adjunction(A, B) as adj;
 show adj.unit;
 "#,
-        tags: &["schema", "free variables", "2-cells"],
+        tags: &["struct", "free variables", "2-cells"],
     },
     Preset {
         id: "equivalence",
         title: "Equivalence",
         category: "Equivalence",
-        description: "A compact equivalence schema with inverse arrows and witnesses.",
+        description: "A compact equivalence structure with inverse arrows and witnesses.",
+        lesson: "Equivalence data is packaged as a structure: forward and backward arrows, plus witnesses that the composites behave like identities.",
         source: r#"title "Equivalence";
 cell X;
 cell Y;
 
-schema Equivalence(X: cell<0>, Y: cell<0>) {
+struct Equivalence(X: cell<0>, Y: cell<0>) {
   cell forward: X -> Y;
   cell backward: Y -> X;
   cell left: id(X) -> forward * backward;
@@ -64,13 +68,14 @@ schema Equivalence(X: cell<0>, Y: cell<0>) {
 use Equivalence(X, Y) as eq;
 show eq.left;
 "#,
-        tags: &["schema", "equivalence", "2-cells"],
+        tags: &["struct", "equivalence", "2-cells"],
     },
     Preset {
         id: "braids",
         title: "Braids",
         category: "Braids",
         description: "Named objects and arrows arranged as a small braid-like pattern.",
+        lesson: "This preset keeps the source deliberately direct. It is a good place to compare the DSL's named cells with point-and-click signature editing.",
         source: r#"title "Braids";
 cell A;
 cell B;
@@ -87,6 +92,7 @@ show braid;
         title: "Macro Composition",
         category: "Examples",
         description: "A macro alias for a reusable two-arrow shape.",
+        lesson: "`macro` is the lightweight generative form. Parenthesized and unparenthesized composition in `show` both compile to the same diagram.",
         source: r#"title "Macro Composition";
 cell A;
 cell B;
@@ -105,36 +111,130 @@ show first.witness;
         tags: &["macro", "namespace", "composition"],
     },
     Preset {
+        id: "idempotent-split",
+        title: "Idempotent Split",
+        category: "Structures",
+        description: "Packages existing idempotent data, then passes it into a split structure.",
+        lesson: "`with` fills a structure from existing cells instead of generating those fields freely. The filled structure can then be passed as a richer argument.",
+        source: r#"title "Idempotent Split";
+abstract "A structure can be filled from existing data with `with`, and another structure can take that packaged structure as an argument.";
+
+cell A;
+cell e: A -> A;
+cell idem: e * e <-> e;
+
+struct Idempotent(X: cell<0>) {
+  cell map: X -> X;
+  cell square: map * map <-> map;
+}
+
+struct Split(I: Idempotent) {
+  cell section: I.X -> I.X;
+  cell retract: I.X -> I.X;
+  cell factor: I.map <-> section * retract;
+}
+
+use Idempotent(A) as given with {
+  map = e;
+  square = idem;
+}
+
+use Split(given) as split;
+show split.factor;
+"#,
+        tags: &["struct", "with", "idempotent", "free variables"],
+    },
+    Preset {
         id: "uniqueness-of-adjunctions",
-        title: "Uniqueness of Adjunctions",
+        title: "Adjunction Comparison Maps",
         category: "Proofs",
         description:
-            "A constructed cancellation proof for the comparison between two right adjoints.",
-        source: r#"title "Uniqueness of Adjunctions";
-abstract "Two right adjoints for the same left adjoint are unique up to equivalence.";
+            "Constructs one comparison map between right adjoints and defines the reverse map as its inverse.",
+        lesson: "The comparison map is constructed from adjunction data. The reverse direction is not a separate axiom; it is obtained by applying primitive invertibility to the constructed map.",
+        source: r#"title "Adjunction Comparison Maps";
+abstract "The comparison maps used in uniqueness of adjunctions are built from the units and counits.";
 
 cell A;
 cell B;
 cell F: A -> B;
 
-schema RightAdjunction(A: cell<0>, B: cell<0>, F: cell<1>) {
+struct RightAdjunction(A: cell<0>, B: cell<0>, F: cell<1>) {
   cell right: B -> A;
   cell unit: id(A) -> F * right;
   cell counit: right * F -> id(B);
+  prove right_triangle_path: right -> right {
+    attach unit;
+    attach counit;
+  }
+  prove left_triangle_path: F -> F {
+    attach unit;
+    attach counit;
+  }
+  cell right_triangle: right_triangle_path <-> id(right);
+  cell left_triangle: left_triangle_path <-> id(F);
 }
 
 use RightAdjunction(A, B, F) as first;
 use RightAdjunction(A, B, F) as second;
 
-// The comparison map is normally built from the units and counits.
-// V1 names it explicitly, then uses invertibility to expose its formal inverse.
-cell to_second: first.right <-> second.right;
-prove first_inverse: to_second * inv(to_second) -> id(first.right);
-prove second_inverse: inv(to_second) * to_second -> id(second.right);
+prove to_second: first.right <-> second.right {
+  attach second.unit;
+  attach first.counit;
+}
+construct to_first: second.right -> first.right {
+  attach inv(to_second);
+}
 
-show first_inverse;
+show to_second;
 "#,
-        tags: &["proof", "adjunction", "invertible", "3-cells"],
+        tags: &["proof", "adjunction", "comparison", "3-cells"],
+    },
+    Preset {
+        id: "eckmann-hilton",
+        title: "Eckmann-Hilton",
+        category: "Proofs",
+        description: "Constructs the commutativity proof for two 2-loops using biased contraction.",
+        lesson: "The two products are compared by contracting both to the same horizontal composite, then composing one path with the inverse of the other.",
+        source: r#"title "Eckmann-Hilton";
+abstract "Two 2-loops on the identity 1-cell commute by comparing two contractions into the same horizontal composite. This is the core pi>=2 abelian argument.";
+
+cell X;
+cell alpha: id(X) <-> id(X);
+cell beta: id(X) <-> id(X);
+
+construct alpha_beta_to_horizontal: alpha * beta <-> contract(alpha * beta, lower) {
+  contract lower;
+}
+
+construct beta_alpha_to_horizontal: beta * alpha <-> contract(alpha * beta, lower) {
+  contract higher;
+}
+
+construct commute: alpha * beta -> beta * alpha {
+  attach alpha_beta_to_horizontal;
+  attach inv(beta_alpha_to_horizontal);
+}
+
+show commute;
+"#,
+        tags: &["proof", "Eckmann-Hilton", "2-loops", "abelian"],
+    },
+    Preset {
+        id: "paper-action-replay",
+        title: "Paper Action Replay",
+        category: "Specification",
+        description: "A low-level source form that replays the same proof actions as the default editor modes.",
+        lesson: "`actions [...]` exposes the underlying proof-action stream. It is intentionally low-level, but it keeps the DSL visibly grounded in the original homotopy.io specification.",
+        source: r#"actions [
+  "CreateGeneratorZero",
+  {"SelectGenerator":{"id":0,"dimension":0}},
+  {"SetBoundary":"Source"},
+  "CreateGeneratorZero",
+  {"SelectGenerator":{"id":1,"dimension":0}},
+  {"SetBoundary":"Target"}
+]
+"#,
+        tags: &["paper", "actions", "signature"],
     },
 ];
 

@@ -140,13 +140,10 @@ fn render_generic<const N: usize>(
 
     let mut manim = String::new();
     if options.use_opengl {
-        manim.push_str(
-            "# Render with 'manim --format mp4 --renderer=opengl homotopy_io_export.py'\n",
-        );
+        manim
+            .push_str("# Render with 'manim --format mp4 --renderer=opengl homotopio_export.py'\n");
     } else {
-        manim.push_str(
-            "# Render with 'manim --format mp4 --renderer=cairo homotopy_io_export.py'\n",
-        );
+        manim.push_str("# Render with 'manim --format mp4 --renderer=cairo homotopio_export.py'\n");
     }
     manim.push_str("import numpy as np\n");
     manim.push_str("from manim import *\n");
@@ -321,7 +318,7 @@ fn render_generic<const N: usize>(
             "{ind}{ind}#self.add(root)\n",
             "{ind}{ind}# Animated output\n",
             "{ind}{ind}self.play(Create(root))\n",
-            "{ind}{ind}text = MarkupText(\"Homotopy.io\", color=BLUE).next_to(root, 2*DOWN)\n",
+            "{ind}{ind}text = MarkupText(\"Homotopio Suite\", color=BLUE).next_to(root, 2*DOWN)\n",
             "{ind}{ind}self.play(Write(text))\n",
             "{ind}{ind}self.wait(5)\n",
         ),

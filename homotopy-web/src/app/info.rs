@@ -6,7 +6,8 @@ pub fn get_help_message() -> Html {
     html! {
         <div class="help">
             <p>
-                {"For instructions on how to use the tool, visit the "}<a href="https://github.com/homotopy-io/homotopy-rs/blob/master/TUTORIAL.md">{"tutorial"}</a>{"."}
+                {"Use the Library drawer for guided source presets, or the Source drawer to edit DSL directly. The original point-and-click tutorial is still included as "}
+                <a href="https://github.com/homotopy-io/homotopy-rs/blob/master/TUTORIAL.md">{"upstream reference material"}</a>{"."}
             </p>
             <table>
                 <tr>
@@ -51,18 +52,18 @@ pub fn get_help_message() -> Html {
                 </tr>
                 <tr>
                     <td class="help-action">
-                        <kbd class="kbc-button">{"↑"}</kbd>
+                        <kbd class="kbc-button">{"Up"}</kbd>
                         {" "}
-                        <kbd class="kbc-button">{"↓"}</kbd>
+                        <kbd class="kbc-button">{"Down"}</kbd>
                     </td>
                     <td class="help-description">{"Switch slice"}</td>
                 </tr>
                 <tr>
-                    <td class="help-action"><kbd class="kbc-button">{"←"}</kbd></td>
+                    <td class="help-action"><kbd class="kbc-button">{"Left"}</kbd></td>
                     <td class="help-description">{"Ascend slice"}</td>
                 </tr>
                 <tr>
-                    <td class="help-action"><kbd class="kbc-button">{"→"}</kbd></td>
+                    <td class="help-action"><kbd class="kbc-button">{"Right"}</kbd></td>
                     <td class="help-description">{"Descend slice"}</td>
                 </tr>
                 <tr>
@@ -106,10 +107,13 @@ pub fn get_about_message() -> Html {
     html! {
         <div>
             <h3>
-                {"homotopy.io: a proof assistant for finitely-presented globular n-categories"}
+                {"Homotopio Suite"}
             </h3>
             <p>
-                {"Written by "}
+                {"An independent source-driven fork of the public homotopy.io codebase. It is not an official homotopy.io project and is not maintained by the homotopy.io team."}
+            </p>
+            <p>
+                {"The upstream proof assistant was written by "}
                 <a href="https://github.com/doctorn">{"Nathan Corbyn"}</a>
                 {", "}
                 <a href="https://github.com/zrho">{"Lukas Heidemann"}</a>
@@ -124,7 +128,7 @@ pub fn get_about_message() -> Html {
                 {"."}
             </p>
             <p>
-                {"For more information, please see the "}
+                {"For background on the upstream mathematics and implementation, see the "}
                 <a href="https://arxiv.org/abs/2402.13179">{"arXiv paper"}</a>
                 {", "}
                 <a href="https://ncatlab.org/nlab/show/homotopy.io">{"nLab page"}</a>
@@ -133,9 +137,9 @@ pub fn get_about_message() -> Html {
                 {"."}
             </p>
             <h3>{"License"}</h3>
-            <p>{"homotopy.io source code is published under the terms of the BSD 3-Clause License."}</p>
+            <p>{"This fork preserves the upstream BSD 3-Clause source license."}</p>
             <pre>{include_str!("../../../LICENSE")}</pre>
-            {"homotopy.io documentation is licensed under a "}
+            {"Upstream documentation is licensed under a "}
             <a rel="license" href="https://creativecommons.org/licenses/by/4.0/">
                 {"Creative Commons Attribution 4.0 International License"}
             </a>{"."}
@@ -151,18 +155,12 @@ pub fn get_panic_message() -> Html {
     html! {
         <div>
             <p>
-                {"It appears you have found an unexpected bug in our tool. Many apologies for the poor experience."}
+                {"It appears you have found an unexpected bug. The downloaded log can help reproduce the local proof state."}
             </p>
             <p>
-                {"We would be extremely grateful if you could report this issue."}
-            </p>
-            <p>
-                {"The process is rather straightforward: the button below will download a file containing some debugging information for us, you can attach it in a new issue in our "}
-                <a href="https://github.com/homotopy-io/homotopy-rs/issues">{"GitHub tracker"}</a>
-                {", alongside a brief description of what your were doing."}
-            </p>
-            <p>
-                {"We'll fix the problem in no time!"}
+                {"Attach it to an issue in the "}
+                <a href="https://github.com/Leucocholia/Homotopio-suite/issues">{"fork repository"}</a>
+                {" along with a short description of what you were doing."}
             </p>
             <button onclick={move |_| {crate::panic::export_dump(false).unwrap();}}>{"Download action logs"}</button>
         </div>
@@ -173,7 +171,7 @@ pub fn get_onboarding_message() -> Html {
     html! {
         <div class="workspace__empty-diagram">
             <div class="workspace__empty-diagram-content">
-                <img src="/logo.svg" alt="Homotopy.io logo" class="workspace__empty-logo" />
+                <img src="/logo.svg" alt="Homotopio Suite logo" class="workspace__empty-logo" />
                 <header class="workspace__empty-header">
                     <h3>{"Don't Panic!"}</h3>
                 </header>

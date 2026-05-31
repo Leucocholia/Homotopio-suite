@@ -1,13 +1,20 @@
 [package]
 name = "homotopy-dsl"
-description = "Readable source language for homotopy.io diagrams"
+description = "Readable source language for Homotopio Suite diagrams"
 version = "0.1.0"
-authors = ["Homotopy.io Extended Editor Contributors"]
+authors = ["Homotopio Suite Contributors"]
 license = "BSD-3-Clause"
 edition = "2021"
 
+[[bin]]
+name = "homotopy-library"
+path = "src/bin/homotopy_library.rs"
+
 [dependencies]
 homotopy-core = { path = "../homotopy-core" }
+homotopy-common = { path = "../homotopy-common" }
 homotopy-graphics = { path = "../homotopy-graphics" }
 homotopy-model = { path = "../homotopy-model" }
 serde = { version = "1.0.203", features = ["derive"] }
+serde_json = "1.0.117"
+toml = "0.8.19"

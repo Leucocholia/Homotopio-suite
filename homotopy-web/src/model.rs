@@ -16,7 +16,7 @@ use thiserror::Error;
 use wasm_bindgen::JsCast;
 
 use crate::app::{
-    account,
+    community_library,
     diagram_gl::{FrameCaptureControl, FRAME_CAPTURE},
     presets,
 };
@@ -43,9 +43,8 @@ pub enum Action {
     SetSource(String),
     ApplySource,
     LoadPreset(String),
+    LoadCommunityPreset(String),
     ClearSourceDiagnostics,
-
-    SetRemoteProjectMetadata(Option<account::RemoteProjectMetadata>),
 
     Help,
 }
@@ -134,7 +133,6 @@ impl Selectables {
 
 #[derive(Debug, Clone)]
 pub struct State {
-    pub remote_project_metadata: Option<account::RemoteProjectMetadata>,
     pub history: History,
     pub options: Option<Selectables>,
     pub attachment_highlight: Option<AttachOption>,
@@ -149,7 +147,6 @@ impl Default for State {
     fn default() -> Self {
         let preset = presets::default_preset();
         Self {
-            remote_project_metadata: None,
             history: History::default(),
             options: None,
             attachment_highlight: None,
@@ -174,7 +171,10 @@ impl State {
     pub fn resets_panzoom(&self, action: &Action) -> bool {
         match action {
             Action::Proof(action) => self.proof().resets_panzoom(action),
-            Action::ApplySource | Action::LoadPreset(_) | Action::ImportProject(_) => true,
+            Action::ApplySource
+            | Action::LoadPreset(_)
+            | Action::LoadCommunityPreset(_)
+            | Action::ImportProject(_) => true,
             _ => false,
         }
     }
@@ -269,7 +269,7 @@ impl State {
                 data.push_str(&stylesheet);
                 data.push_str(&svg[content_start..]);
 
-                generate_download("homotopy_io_export", "svg", data.as_bytes())
+                generate_download("homotopio_export", "svg", data.as_bytes())
                     .map_err(ModelError::Export)?;
             }
 
@@ -301,7 +301,7 @@ impl State {
 
                 let data = render(&diagram, view_dimension, signature, format);
 
-                generate_download("homotopy_io_export", format.extension(), data.as_bytes())
+                generate_download("homotopio_export", format.extension(), data.as_bytes())
                     .map_err(ModelError::Export)?;
             }
 
@@ -328,8 +328,7 @@ impl State {
                     )
                 }));
 
-                generate_download("homotopy_io_export", "zip", &data)
-                    .map_err(ModelError::Export)?;
+                generate_download("homotopio_export", "zip", &data).map_err(ModelError::Export)?;
             }
 
             Action::ExportActions => {
@@ -342,7 +341,7 @@ impl State {
                     self.proof().workspace.clone(),
                     self.proof().metadata.clone(),
                 );
-                generate_download("homotopy_io_export", "hom", data.as_slice())
+                generate_download("homotopio_export", "hom", data.as_slice())
                     .map_err(ModelError::Export)?;
             }
 
@@ -353,8 +352,7 @@ impl State {
                     self.proof().metadata.clone(),
                 );
                 let data = project_bundle(&proof, &self.source, self.active_preset.as_deref());
-                generate_download("homotopy_io_project", "hio", &data)
-                    .map_err(ModelError::Export)?;
+                generate_download("homotopio_project", "hio", &data).map_err(ModelError::Export)?;
             }
 
             Action::ImportProject(data) => {
@@ -417,13 +415,18 @@ impl State {
             Action::Merge(generator) => self.merge_options(generator),
             Action::SetSource(source) => {
                 self.source = source;
-                self.active_preset = self
-                    .active_preset
-                    .as_ref()
-                    .and_then(|id| presets::get(id))
-                    .and_then(|preset| {
+                self.active_preset = self.active_preset.as_ref().and_then(|id| {
+                    if let Some(preset) = presets::get(id) {
                         (preset.source == self.source).then(|| preset.id.to_owned())
-                    });
+                    } else {
+                        community_library::parse_active_id(id)
+                            .and_then(community_library::get)
+                            .and_then(|preset| {
+                                (preset.source == self.source)
+                                    .then(|| community_library::active_id(&preset.id))
+                            })
+                    }
+                });
             }
             Action::ApplySource => {
                 let result = homotopy_dsl::compile(&self.source, CompileOptions::default());
@@ -444,11 +447,14 @@ impl State {
                 self.active_preset = Some(preset.id.to_owned());
                 self.update(Action::ApplySource)?;
             }
+            Action::LoadCommunityPreset(id) => {
+                let preset = community_library::get(&id).ok_or(ModelError::UnknownPreset)?;
+                self.source = preset.source.clone();
+                self.active_preset = Some(community_library::active_id(&preset.id));
+                self.update(Action::ApplySource)?;
+            }
             Action::ClearSourceDiagnostics => {
                 self.source_diagnostics.clear();
-            }
-            Action::SetRemoteProjectMetadata(metadata) => {
-                self.set_remote_project_metadata(metadata);
             }
             Action::Help => help()?,
         }
@@ -591,21 +597,6 @@ impl State {
         }
     }
 
-    /// Handler for [Action::SetRemoteProjectId].
-    fn set_remote_project_metadata(&mut self, metadata: Option<account::RemoteProjectMetadata>) {
-        if let Some(md) = &metadata {
-            let path = if md.visibility == account::ProjectVisibility::Published {
-                format!("/p/{}", md.id)
-            } else {
-                format!("/u/{}/{}", md.uid, md.id)
-            };
-            update_window_url_path(&path);
-        } else {
-            update_window_url_path("/");
-        }
-        self.remote_project_metadata = metadata;
-    }
-
     fn refresh_source_analysis(&mut self) {
         let result = homotopy_dsl::compile(&self.source, CompileOptions::default());
         self.source_diagnostics = result.diagnostics;
@@ -681,7 +672,7 @@ struct ProjectBundle {
 
 fn project_bundle(proof: &[u8], source: &str, active_preset: Option<&str>) -> Vec<u8> {
     let manifest = ProjectManifest {
-        format: "homotopy.io.project".to_owned(),
+        format: "homotopio.project".to_owned(),
         version: 1,
         proof: "proof.hom".to_owned(),
         source: "source.homl".to_owned(),
@@ -709,7 +700,7 @@ fn read_project_bundle(data: &[u8]) -> Result<ProjectBundle, ModelError> {
     let manifest = read_zip_string(&mut archive, "manifest.json")?;
     let manifest: ProjectManifest =
         serde_json::from_str(&manifest).map_err(|_| ModelError::Project)?;
-    if manifest.format != "homotopy.io.project" || manifest.version != 1 {
+    if manifest.format != "homotopio.project" || manifest.version != 1 {
         return Err(ModelError::Project);
     }
 
@@ -761,8 +752,8 @@ pub fn zip_files(files: impl Iterator<Item = (String, impl AsRef<[u8]>)>) -> Vec
 
 pub fn generate_download(name: &str, ext: &str, data: &[u8]) -> Result<(), wasm_bindgen::JsValue> {
     let val: js_sys::Uint8Array = data.into();
-    let mut options = web_sys::BlobPropertyBag::new();
-    options.type_("application/msgpack");
+    let options = web_sys::BlobPropertyBag::new();
+    options.set_type("application/msgpack");
     let blob = web_sys::Blob::new_with_u8_array_sequence_and_options(
         &js_sys::Array::of1(&val.into()).into(),
         &options,
@@ -781,20 +772,6 @@ pub fn generate_download(name: &str, ext: &str, data: &[u8]) -> Result<(), wasm_
     a.click();
     a.remove();
     web_sys::Url::revoke_object_url(&url)
-}
-
-pub fn update_window_url_path(new_path: &str) {
-    let window = web_sys::window().unwrap();
-    let origin = window.location().origin().unwrap();
-    window
-        .history()
-        .unwrap()
-        .replace_state_with_url(
-            &None::<u8>.into(),
-            "title",
-            Some(&format!("{origin}{new_path}")),
-        )
-        .unwrap();
 }
 
 #[cfg(test)]

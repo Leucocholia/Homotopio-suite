@@ -1,10 +1,10 @@
 [package]
 name = "homotopy-web"
-description = "Web frontend for homotopy.io"
+description = "Source-driven web frontend for Homotopio Suite"
 version = "0.1.2"
 authors = ["Lukas Heidemann <lukas@heidemann.me>", "Nick Hu <me@nickhu.co.uk>", "Nathan Corbyn <me@nathancorbyn.com>"]
 license = "BSD-3-Clause"
-repository = "https://github.com/homotopy-io/homotopy-rs"
+repository = "https://github.com/Leucocholia/Homotopio-suite"
 categories = ["wasm"]
 readme = "README.md"
 edition = "2021"

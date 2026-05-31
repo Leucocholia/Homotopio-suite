@@ -52,7 +52,7 @@ pub fn WorkspaceView(props: &Props) -> Html {
         <TexSpan
             class="workspace__project-title"
             error_color="#c004"
-            raw_tex={props.metadata.title.as_ref().map(Clone::clone).unwrap_or_default()}
+            raw_tex={props.metadata.title.clone().unwrap_or_default()}
         />
     };
     let slice_buttons = match workspace {

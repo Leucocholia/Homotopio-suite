@@ -132,7 +132,7 @@ pub(crate) fn unify<V, E, Ix>(
     // unify along the source of edges
     for (target, e) in graph
         .edges_directed(remove, Outgoing)
-        .filter(|&e| (e.target() != keep))
+        .filter(|&e| e.target() != keep)
         .map(|e| (e.target(), e.id()))
         .collect::<Vec<_>>()
     {
@@ -155,7 +155,7 @@ pub(crate) fn unify<V, E, Ix>(
     // unify along the target of edges
     for (source, e) in graph
         .edges_directed(remove, Incoming)
-        .filter(|&e| (e.source() != keep))
+        .filter(|&e| e.source() != keep)
         .map(|e| (e.source(), e.id()))
         .collect::<Vec<_>>()
     {

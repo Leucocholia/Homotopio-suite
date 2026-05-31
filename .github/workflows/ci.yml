@@ -3,208 +3,25 @@ name: CI
 on:
   push:
     branches:
-      - master
+      - main
   pull_request:
 
 env:
   CARGO_HUSKY_DONT_INSTALL_HOOKS: true
-  NIX_BUILD: nix build -L --show-trace
-  NIX_BUILD_UNCACHED: nix run nixpkgs#nix-build-uncached -- -build-flags -L --show-trace
-  FLAKE: 'github:homotopy-io/homotopy-rs?rev=${{ github.sha }}'
 
 jobs:
   test:
-    name: Test
+    name: Rust checks
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Install Nix
-        uses: cachix/install-nix-action@v31
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          extra_nix_config: |
-            max-jobs = 4
-      - name: Setup cachix
-        uses: cachix/cachix-action@v17
-        with:
-          name: homotopy-io
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - name: Test
-        run: |
-          nix-shell --command "cargo test"
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Install Nix
-        uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            max-jobs = 4
-      - name: Setup cachix
-        uses: cachix/cachix-action@v17
-        with:
-          name: homotopy-io
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - name: Run lint
-        run: |
-          nix run .#lint
-
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Install Nix
-        uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            max-jobs = 4
-      - name: Setup cachix
-        uses: cachix/cachix-action@v17
-        with:
-          name: homotopy-io
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      # https://github.com/actions/upload-artifact/issues/92#issuecomment-1080347032
-      - name: Build
-        run: |
-          $NIX_BUILD $FLAKE
-          echo "UPLOAD_PATH=$(readlink -f result)" >> $GITHUB_ENV
-      - name: Archive build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: web
-          path: ${{ env.UPLOAD_PATH }}
-
-  shelltest:
-    name: Shell Test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Install Nix
-        uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            max-jobs = 4
-      - name: Setup cachix
-        uses: cachix/cachix-action@v17
-        with:
-          name: homotopy-io
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - name: Test devshell
-        run: |
-          nix-shell --command "exit"
-
-  deploy:
-    name: Deploy
-    runs-on: ubuntu-latest
-    needs: [build, test]
-    if: github.ref == 'refs/heads/master'
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: web
-          path: result
-      - name: Checkout historical benchmarking data
-        uses: actions/checkout@v4
-        with:
-          ref: gh-pages
-          path: old
-      - name: Merge historical benchmarking data
-        run: mv old/dev result/dev
-      - name: Deploy to GitHub Pages (redundant)
-        uses: JamesIves/github-pages-deploy-action@v4.7.3
-        with:
-          branch: gh-pages
-          folder: result
-      - name: Deploy to Firebase (live)
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: '${{ secrets.GITHUB_TOKEN }}'
-          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_HOMOTOPY_IO }}'
-          channelId: live
-          projectId: homotopy-io
-          target: homotopy-rs
-
-  benchmark:
-    name: Benchmark
-    runs-on: ubuntu-latest
-    needs: [build, test]
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Install Nix
-        uses: cachix/install-nix-action@v31
-        with:
-          extra_nix_config: |
-            max-jobs = 4
-      - name: Setup cachix
-        uses: cachix/cachix-action@v17
-        with:
-          name: homotopy-io
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-      - name: Run cargo bench
-        run: |
-          nix run .#bench
-      - name: Store benchmark result
-        uses: NickHu/github-action-benchmark@v1
-        with:
-          name: Rust Benchmark
-          tool: 'criterion'
-          output-file-path: output.txt
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          auto-push: ${{ github.ref == 'refs/heads/master' }}
-          comment-on-alert: true
-          fail-on-alert: true
-          alert-comment-cc-users: '@NickHu,@zrho'
-
-  sync-benchmark:
-    name: Sync benchmark data to Firebase Hosting
-    runs-on: ubuntu-latest
-    needs: benchmark
-    if: github.ref == 'refs/heads/master'
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Checkout GitHub Pages (redundant)
-        uses: actions/checkout@v4
-        with:
-          ref: gh-pages
-          path: result
-      - name: Deploy to Firebase (live)
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: '${{ secrets.GITHUB_TOKEN }}'
-          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_HOMOTOPY_IO }}'
-          channelId: live
-          projectId: homotopy-io
-          target: homotopy-rs
-
-  preview:
-    name: Preview
-    runs-on: ubuntu-latest
-    needs: build
-    if: '${{ github.event.pull_request.head.repo.full_name == github.repository }}'
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: web
-          path: result
-      - name: Deploy to Firebase (preview)
-        uses: FirebaseExtended/action-hosting-deploy@v0
-        with:
-          repoToken: '${{ secrets.GITHUB_TOKEN }}'
-          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_HOMOTOPY_IO }}'
-          channelId: '${{ github.event.pull_request.head.label }}'
-          expires: 30d
-          projectId: homotopy-io
-          target: homotopy-rs
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Test DSL
+        run: cargo test -p homotopy-dsl
+      - name: Validate community catalog
+        run: cargo run -p homotopy-dsl --bin homotopy-library -- community-library --check
+      - name: Check web app
+        run: cargo check -p homotopy-web --target wasm32-unknown-unknown

@@ -1,7 +1,7 @@
 
 # How to use the tool: a Tutorial
 
-In this tutorial, we will show show how to prove in [homotopy.io](https://beta.homotopy.io) that every equivalence of 1-categories may be promoted to an adjoint equivalence.
+This inherited tutorial shows how to use the point-and-click proof assistant to prove that every equivalence of 1-categories may be promoted to an adjoint equivalence. In Homotopio Suite, the same style of construction can also be explored through the Source and Library tabs.
 
 You may use the `Undo` and `Redo` features at any point in the tutorial, by either clicking on the arrows on the centre-left or pressing U or Y.
 
@@ -12,7 +12,7 @@ The statement of the theorem requires the following generators in the signature:
 - Two 1-cells $F: C \to D,G: D \to C$, the back-forth functors,
 - Two 2-cells $\alpha: 1_C \to G \circ F,\beta: F \circ G \to 1_D$, the invertible natural transformations that witness the equivalence.
 
-So, let us start with the empty workspace viewed at [homotopy.io](https://beta.homotopy.io).
+So, let us start with an empty Homotopio Suite workspace.
 If we click on the `Signature` button (second on the left), we can see that it is currently empty, as expected. We will begin by constructing the signature we described above.
 
 ## The 0-cells

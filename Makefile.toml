@@ -20,18 +20,12 @@ wasm-bindgen --out-dir dist --no-typescript --target web ${CARGO_TARGET_DIR}/was
 
 [tasks.build-wasm-watch]
 run_task = { name = ["build-wasm"] }
-watch = { watch = ["homotopy-common/src", "homotopy-core/src", "homotopy-graphics/src", "homotopy-web/src", "homotopy-model/src", "homotopy-gl/src"] }
+watch = { watch = ["homotopy-common/src", "homotopy-core/src", "homotopy-dsl/src", "homotopy-graphics/src", "homotopy-web/src", "homotopy-model/src", "homotopy-gl/src"] }
 
 [tasks.build-highs]
 script = '''
 mkdir -p dist
 cp -f $(nix build .#highs --no-link --print-out-paths --extra-experimental-features flakes --extra-experimental-features nix-command)/highs.{js,wasm} dist/
-'''
-
-[tasks.build-functions]
-script = '''
-cd functions/
-npm run build
 '''
 
 [tasks.dist-static]
@@ -73,13 +67,6 @@ args = [
   "--render-index"
 ,  "--coi"
 , "dist/"
-]
-
-# for testing Firebase components locally
-[tasks.firebase-emulator]
-command = "firebase"
-args = [
-  "emulators:start"
 ]
 
 [tasks.serve]

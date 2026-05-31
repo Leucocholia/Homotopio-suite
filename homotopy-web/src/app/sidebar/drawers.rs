@@ -5,7 +5,7 @@ use super::{DrawerViewSize, Sidebar, SidebarButton, SidebarDrawer, SidebarMsg, S
 use crate::app::debug::DebugView;
 use crate::{
     app::{
-        account::AccountView, image_export::ImageExportView, library::LibraryView, presets,
+        community_library, image_export::ImageExportView, library::LibraryView, presets,
         project::ProjectView, settings::SettingsView, signature::SignatureView,
         source::SourcePanel, stash::StashView,
     },
@@ -108,20 +108,6 @@ macro_rules! declare_sidebar_drawers {
 }
 
 declare_sidebar_drawers! {
-    DRAWER_LOGIN {
-        "Account",
-        "account",
-        "account_circle",
-        |dispatch, _, props: &SidebarProps, _| html! {
-            <AccountView
-                dispatch={dispatch}
-                proof={props.proof.clone()}
-                remote_project_metadata={props.remote_project_metadata.clone()}
-            />
-        },
-        min_width: 250,
-    }
-
     DRAWER_PROJECT {
         "Project",
         "project",
@@ -142,6 +128,7 @@ declare_sidebar_drawers! {
         |dispatch, sidebar_dispatch: &Callback<SidebarMsg>, props: &SidebarProps, _| html! {
             <LibraryView
                 presets={presets::PRESETS}
+                community_presets={community_library::presets()}
                 active_preset={props.active_preset.clone()}
                 dispatch={dispatch}
                 on_load_preset={sidebar_dispatch.reform(|_| SidebarMsg::Toggle(Some(NavDrawer::DRAWER_SOURCE)))}

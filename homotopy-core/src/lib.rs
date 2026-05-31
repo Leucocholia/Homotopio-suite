@@ -1,3 +1,11 @@
+#![allow(
+    clippy::manual_is_multiple_of,
+    clippy::mem_replace_option_with_some,
+    clippy::mutable_key_type,
+    clippy::unnecessary_map_or,
+    clippy::unnecessary_sort_by
+)]
+
 pub use common::{Boundary, Direction, Generator, Height, Orientation, SliceIndex};
 pub use contraction::Bias;
 pub use diagram::{Diagram, Diagram0, DiagramN};

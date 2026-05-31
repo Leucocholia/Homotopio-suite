@@ -3,7 +3,7 @@ name = "homotopy-common"
 version = "0.1.0"
 authors = ["Nathan Corbyn <me@nathancorbyn.com>"]
 license = "BSD-3-Clause"
-repository = "https://github.com/homotopy-io/homotopy-rs"
+repository = "https://github.com/Leucocholia/Homotopio-suite"
 edition = "2021"
 
 [package.metadata.nix]

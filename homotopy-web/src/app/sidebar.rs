@@ -6,7 +6,7 @@ use yew_macro::function_component;
 use homotopy_dsl::{Diagnostic, SymbolInfo};
 
 use crate::{
-    app::{account::RemoteProjectMetadata, attach::AttachView, keybindings::Keybindings},
+    app::{attach::AttachView, keybindings::Keybindings},
     components::{
         icon::{Icon, IconSize},
         Visibility,
@@ -51,17 +51,12 @@ pub fn SidebarButton(props: &SidebarButtonProps) -> Html {
     }
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Default, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum DrawerViewSize {
     TemporarilyHidden,
+    #[default]
     Regular,
     Expanded,
-}
-
-impl Default for DrawerViewSize {
-    fn default() -> Self {
-        Self::Regular
-    }
 }
 
 // from pixel width of drawer to size
@@ -93,8 +88,6 @@ pub struct SidebarDrawerProps {
     pub title: &'static str,
     pub model_dispatch: Callback<model::Action>,
     pub sidebar_dispatch: Callback<SidebarMsg>,
-    #[prop_or_default]
-    pub remote_project_metadata: Option<RemoteProjectMetadata>,
     pub initial_width: i32,
     #[prop_or(0)]
     pub min_width: i32,
@@ -267,7 +260,6 @@ pub struct SidebarProps {
     pub proof: Proof,
     pub options: Option<model::Selectables>,
     pub dispatch: Callback<model::Action>,
-    pub remote_project_metadata: Option<RemoteProjectMetadata>,
     pub active_preset: Option<String>,
     pub source: String,
     pub source_diagnostics: Vec<Diagnostic>,
@@ -354,7 +346,7 @@ impl Component for Sidebar {
             <>
                 <aside class="sidebar">
                     <a href="#about">
-                        <img src="/logo.svg" alt="Homotopy.io logo" class="sidebar__logo" />
+                        <img src="/logo.svg" alt="Homotopio Suite logo" class="sidebar__logo" />
                     </a>
                     {self.nav(ctx)}
                     {self.tools(ctx)}

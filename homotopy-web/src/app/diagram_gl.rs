@@ -302,7 +302,7 @@ impl Component for DiagramGl {
                                 .await
                                 .expect("failed to convert blob to array buffer");
                             generate_download(
-                                "homotopy_io_export",
+                                "homotopio_export",
                                 "png",
                                 &Uint8Array::new(&frame).to_vec(),
                             )
@@ -332,7 +332,7 @@ impl Component for DiagramGl {
                                     Uint8Array::new(&frames[f]).to_vec(),
                                 )
                             }));
-                            generate_download("homotopy_io_export", "zip", &zip)
+                            generate_download("homotopio_export", "zip", &zip)
                                 .expect("failed to generate download for multiple frames");
                         });
                         tracing::info!("Finished frame capture");

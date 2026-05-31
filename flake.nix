@@ -1,5 +1,5 @@
 {
-  description = "homotopy.io rust edition";
+  description = "Homotopio Suite source-driven homotopy diagram editor";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -82,7 +82,6 @@
                 { package = wasm-bindgen-cli; }
                 { package = nodejs; }
                 { package = jdk; }
-                { package = nodePackages.firebase-tools; }
               ]);
           };
         };

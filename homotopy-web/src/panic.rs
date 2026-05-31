@@ -10,7 +10,7 @@ use crate::model::{generate_download, ModelError};
 // panic handling logic which is responsible
 // for producing crash dumps.
 // Out of sight, out of mind, don't break it.
-pub fn panic_handler(info: &std::panic::PanicInfo<'_>) {
+pub fn panic_handler(info: &std::panic::PanicHookInfo<'_>) {
     display_panic_message();
 
     // This provides better error messages in debug mode.
@@ -123,9 +123,9 @@ pub fn get_dump(safe: bool) -> Option<Vec<u8>> {
 pub fn export_dump(safe: bool) -> Result<(), ModelError> {
     let data = get_dump(safe).ok_or(ModelError::Internal)?;
     if needs_zip() {
-        generate_download("homotopy_io_state", "zip", &data).map_err(ModelError::Export)
+        generate_download("homotopio_state", "zip", &data).map_err(ModelError::Export)
     } else {
-        generate_download("homotopy_io_actions", "txt", &data).map_err(ModelError::Export)
+        generate_download("homotopio_actions", "txt", &data).map_err(ModelError::Export)
     }
 }
 

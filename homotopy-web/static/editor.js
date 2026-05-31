@@ -67,13 +67,13 @@ Promise.all([
           return "comment";
         }
         if (stream.match(/"(?:[^"\\]|\\.)*"/)) return "string";
-        if (stream.match(/\b(?:cell|prove|schema|macro|use|as|show|title|author|abstract|id|inv)\b/)) {
+        if (stream.match(/\b(?:actions|attach|cell|construct|contract|folder|paper|prove|schema|property|struct|macro|use|as|with|show|title|author|abstract|id|inv)\b/)) {
           return "keyword";
         }
         if (stream.match(/[0-9]+/)) return "number";
         if (stream.match(/[A-Z][A-Za-z0-9_.]*/)) return "typeName";
         if (stream.match(/[a-z_][A-Za-z0-9_.]*/)) return "variableName";
-        if (stream.match(/<->|->|[{}():;,.*<>]/)) return "operator";
+        if (stream.match(/<->|->|[{}():;,.*<>=]/)) return "operator";
         stream.next();
         return null;
       },
