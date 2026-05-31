@@ -104,6 +104,39 @@ show first.witness;
 "#,
         tags: &["macro", "namespace", "composition"],
     },
+    Preset {
+        id: "uniqueness-of-adjunctions",
+        title: "Uniqueness of Adjunctions",
+        category: "Proofs",
+        description:
+            "A proof-shaped diagram: two right adjoints for one left adjoint are equivalent.",
+        source: r#"title "Uniqueness of Adjunctions";
+abstract "Two right adjoints for the same left adjoint are unique up to equivalence.";
+
+cell A;
+cell B;
+cell F: A -> B;
+
+schema RightAdjunction(A: cell<0>, B: cell<0>, F: cell<1>) {
+  cell right: B -> A;
+  cell unit: id(A) -> F * right;
+  cell counit: right * F -> id(B);
+}
+
+use RightAdjunction(A, B, F) as first;
+use RightAdjunction(A, B, F) as second;
+
+// The comparison maps are normally built from the units and counits.
+// V1 names them explicitly, then shows the higher witness that they invert.
+cell to_second: first.right -> second.right;
+cell to_first: second.right -> first.right;
+cell first_inverse: to_second * to_first -> id(first.right);
+cell second_inverse: to_first * to_second -> id(second.right);
+
+show first_inverse;
+"#,
+        tags: &["proof", "adjunction", "3-cells"],
+    },
 ];
 
 pub fn default_preset() -> &'static Preset {
