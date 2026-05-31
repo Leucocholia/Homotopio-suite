@@ -77,7 +77,7 @@ pub enum Stmt {
     Schema(SchemaDecl),
     Use(UseDecl),
     Show {
-        name: String,
+        expr: Expr,
         span: Span,
     },
 }
@@ -590,10 +590,10 @@ impl Parser {
 
     fn parse_show(&mut self) -> Option<Stmt> {
         let start = self.bump().span;
-        let (name, _) = self.parse_name()?;
+        let expr = self.parse_expr()?;
         let end = self.expect(TokenKind::Semicolon, "expected `;` after show statement")?;
         Some(Stmt::Show {
-            name,
+            expr,
             span: start.join(end.span),
         })
     }
@@ -748,6 +748,7 @@ struct Compiler {
     schemas: HashMap<String, SchemaDecl>,
     diagnostics: Vec<Diagnostic>,
     selected: Option<String>,
+    selected_diagram: Option<Diagram>,
     metadata: Metadata,
     next_generator_id: usize,
     expansion_stack: Vec<String>,
@@ -766,6 +767,7 @@ impl Compiler {
             schemas: HashMap::new(),
             diagnostics: Vec::new(),
             selected: None,
+            selected_diagram: None,
             metadata,
             next_generator_id: 0,
             expansion_stack: Vec::new(),
@@ -802,13 +804,16 @@ impl Compiler {
             },
             Stmt::Cell(decl) => self.compile_cell(decl, scope),
             Stmt::Use(decl) => self.compile_use(decl, scope),
-            Stmt::Show { name, span } => {
-                let resolved = self.resolve_name(name, scope);
-                if self.symbols.contains_key(&resolved) {
-                    self.selected = Some(resolved);
-                } else {
-                    self.error(format!("unknown symbol `{name}`"), *span);
+            Stmt::Show { expr, span } => {
+                let Some(diagram) = self.compile_expr(expr, scope) else {
+                    return;
+                };
+                if let Err(error) = diagram.check(true) {
+                    self.error(format!("shown diagram failed validation: {error:?}"), *span);
+                    return;
                 }
+                self.selected = Some(self.format_expr(expr, scope));
+                self.selected_diagram = Some(diagram);
             }
             Stmt::Schema(decl) => {
                 self.error(
@@ -1043,11 +1048,7 @@ impl Compiler {
             return None;
         }
 
-        let workspace = self
-            .selected
-            .as_ref()
-            .and_then(|selected| self.symbols.get(selected))
-            .map(|symbol| Workspace::new(symbol.diagram.clone()));
+        let workspace = self.selected_diagram.clone().map(Workspace::new);
 
         Some(ProofState {
             signature: self.signature.clone(),
@@ -1078,6 +1079,21 @@ impl Compiler {
             .get(name)
             .cloned()
             .unwrap_or_else(|| name.to_owned())
+    }
+
+    fn format_expr(&self, expr: &Expr, scope: &Scope) -> String {
+        match expr {
+            Expr::Name { name, .. } => self.resolve_name(name, scope),
+            Expr::Identity { expr, .. } => format!("id({})", self.format_expr(expr, scope)),
+            Expr::Compose { terms, .. } => terms
+                .iter()
+                .map(|term| match term {
+                    Expr::Compose { .. } => format!("({})", self.format_expr(term, scope)),
+                    _ => self.format_expr(term, scope),
+                })
+                .collect::<Vec<_>>()
+                .join(" * "),
+        }
     }
 
     fn error(&mut self, message: impl Into<String>, span: Span) {
@@ -1131,6 +1147,48 @@ show adj.unit;
         assert!(names.contains(&"adj.unit"));
         assert!(names.contains(&"adj.counit"));
         assert_eq!(result.selected.as_deref(), Some("adj.unit"));
+    }
+
+    #[test]
+    fn show_accepts_composed_macro_expressions() {
+        for show in [
+            "show (first.left * second.left);",
+            "show first.left * second.left;",
+        ] {
+            let source = [
+                r#"title "Macro Composition";
+cell A;
+cell B;
+cell C;
+
+macro Span(A: cell<0>, B: cell<0>) {
+  cell left: A -> B;
+  cell right: B -> A;
+  cell witness: id(A) -> left * right;
+}
+
+use Span(A, B) as first;
+use Span(B, C) as second;
+"#,
+                show,
+                "\n",
+            ]
+            .concat();
+
+            let result = compile(&source, CompileOptions::default());
+            assert!(result.is_ok(), "{:?}", result.diagnostics);
+            assert_eq!(result.selected.as_deref(), Some("first.left * second.left"));
+
+            let workspace = result
+                .proof
+                .and_then(|proof| proof.workspace)
+                .expect("composed show expression should create a workspace");
+            workspace
+                .diagram
+                .check(true)
+                .expect("shown composed diagram should validate");
+            assert_eq!(workspace.diagram.dimension(), 1);
+        }
     }
 
     #[test]
