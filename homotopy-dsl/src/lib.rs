@@ -94,6 +94,7 @@ pub struct CellDecl {
     pub name: String,
     pub source: Option<Expr>,
     pub target: Option<Expr>,
+    pub invertibility: Invertibility,
     pub span: Span,
 }
 
@@ -124,15 +125,17 @@ pub struct UseDecl {
 pub enum Expr {
     Name { name: String, span: Span },
     Identity { expr: Box<Expr>, span: Span },
+    Inverse { expr: Box<Expr>, span: Span },
     Compose { terms: Vec<Expr>, span: Span },
 }
 
 impl Expr {
     fn span(&self) -> Span {
         match self {
-            Self::Name { span, .. } | Self::Identity { span, .. } | Self::Compose { span, .. } => {
-                *span
-            }
+            Self::Name { span, .. }
+            | Self::Identity { span, .. }
+            | Self::Inverse { span, .. }
+            | Self::Compose { span, .. } => *span,
         }
     }
 }
@@ -200,6 +203,7 @@ enum TokenKind {
     Gt,
     Star,
     Arrow,
+    DoubleArrow,
     Eof,
 }
 
@@ -291,6 +295,13 @@ impl<'a> Lexer<'a> {
                 b')' => self.single(TokenKind::RParen),
                 b'{' => self.single(TokenKind::LBrace),
                 b'}' => self.single(TokenKind::RBrace),
+                b'<' if self.peek_next() == Some(b'-') && self.peek_offset(2) == Some(b'>') => {
+                    self.cursor += 3;
+                    Token {
+                        kind: TokenKind::DoubleArrow,
+                        span: Span::new(start, self.cursor),
+                    }
+                }
                 b'<' => self.single(TokenKind::Lt),
                 b'>' => self.single(TokenKind::Gt),
                 b'*' => self.single(TokenKind::Star),
@@ -387,6 +398,7 @@ impl<'a> Lexer<'a> {
             "as" => TokenKind::Keyword("as"),
             "show" => TokenKind::Keyword("show"),
             "id" => TokenKind::Keyword("id"),
+            "inv" => TokenKind::Keyword("inv"),
             "title" => TokenKind::Keyword("title"),
             "author" => TokenKind::Keyword("author"),
             "abstract" => TokenKind::Keyword("abstract"),
@@ -424,6 +436,10 @@ impl<'a> Lexer<'a> {
 
     fn peek_next(&self) -> Option<u8> {
         self.bytes.get(self.cursor + 1).copied()
+    }
+
+    fn peek_offset(&self, offset: usize) -> Option<u8> {
+        self.bytes.get(self.cursor + offset).copied()
     }
 }
 
@@ -503,21 +519,37 @@ impl Parser {
     fn parse_cell(&mut self) -> Option<CellDecl> {
         let start = self.bump().span;
         let (name, _) = self.parse_name()?;
-        let (source, target) = if self.eat(TokenKind::Colon).is_some() {
+        let (source, target, invertibility) = if self.eat(TokenKind::Colon).is_some() {
             let source = self.parse_expr()?;
-            self.expect(TokenKind::Arrow, "expected `->` in cell declaration")?;
+            let invertibility = self.parse_cell_relation()?;
             let target = self.parse_expr()?;
-            (Some(source), Some(target))
+            (Some(source), Some(target), invertibility)
         } else {
-            (None, None)
+            (None, None, Invertibility::Directed)
         };
         let end = self.expect(TokenKind::Semicolon, "expected `;` after cell declaration")?;
         Some(CellDecl {
             name,
             source,
             target,
+            invertibility,
             span: start.join(end.span),
         })
+    }
+
+    fn parse_cell_relation(&mut self) -> Option<Invertibility> {
+        let token = self.bump().clone();
+        match token.kind {
+            TokenKind::Arrow => Some(Invertibility::Directed),
+            TokenKind::DoubleArrow => Some(Invertibility::Invertible),
+            _ => {
+                self.diagnostics.push(Diagnostic::error(
+                    "expected `->` or `<->` in cell declaration",
+                    token.span,
+                ));
+                None
+            }
+        }
     }
 
     fn parse_schema(&mut self) -> Option<SchemaDecl> {
@@ -623,6 +655,16 @@ impl Parser {
             let expr = self.parse_expr()?;
             let end = self.expect(TokenKind::RParen, "expected `)` after identity expression")?;
             return Some(Expr::Identity {
+                expr: Box::new(expr),
+                span: start.join(end.span),
+            });
+        }
+        if self.at_keyword("inv") {
+            let start = self.bump().span;
+            self.expect(TokenKind::LParen, "expected `(` after inv")?;
+            let expr = self.parse_expr()?;
+            let end = self.expect(TokenKind::RParen, "expected `)` after inverse expression")?;
+            return Some(Expr::Inverse {
                 expr: Box::new(expr),
                 span: start.join(end.span),
             });
@@ -885,7 +927,7 @@ impl Compiler {
         let info = GeneratorInfo {
             generator,
             oriented: false,
-            invertibility: Invertibility::Directed,
+            invertibility: decl.invertibility,
             single_preview: true,
             color: Color::from_str(COLORS[generator.id % COLORS.len()]).unwrap(),
             shape: VertexShape::default(),
@@ -982,8 +1024,25 @@ impl Compiler {
                 let diagram = self.compile_expr(expr, scope)?;
                 Some(diagram.identity().into())
             }
+            Expr::Inverse { expr, span } => self.compile_inverse(expr, *span, scope),
             Expr::Compose { terms, span } => self.compile_composition(terms, *span, scope),
         }
+    }
+
+    fn compile_inverse(&mut self, expr: &Expr, span: Span, scope: &Scope) -> Option<Diagram> {
+        let diagram = self.compile_expr(expr, scope)?;
+        if !diagram.invertibility(&self.signature).is_invertible() {
+            self.error("only invertible diagrams can be inverted", span);
+            return None;
+        }
+        let diagram = match DiagramN::try_from(diagram.clone()) {
+            Ok(diagram) => diagram,
+            Err(_) => {
+                self.error("only positive-dimensional diagrams can be inverted", span);
+                return None;
+            }
+        };
+        Some(diagram.inverse().into())
     }
 
     fn compile_composition(
@@ -1085,6 +1144,7 @@ impl Compiler {
         match expr {
             Expr::Name { name, .. } => self.resolve_name(name, scope),
             Expr::Identity { expr, .. } => format!("id({})", self.format_expr(expr, scope)),
+            Expr::Inverse { expr, .. } => format!("inv({})", self.format_expr(expr, scope)),
             Expr::Compose { terms, .. } => terms
                 .iter()
                 .map(|term| match term {
@@ -1189,6 +1249,56 @@ use Span(B, C) as second;
                 .expect("shown composed diagram should validate");
             assert_eq!(workspace.diagram.dimension(), 1);
         }
+    }
+
+    #[test]
+    fn compiles_invertible_cells_and_inverse_expressions() {
+        let result = compile(
+            "cell A; cell B; cell f: A <-> B; show inv(f);",
+            CompileOptions::default(),
+        );
+        assert!(result.is_ok(), "{:?}", result.diagnostics);
+        assert_eq!(result.selected.as_deref(), Some("inv(f)"));
+
+        let proof = result.proof.expect("invertible program should compile");
+        let f = proof
+            .signature
+            .iter()
+            .find(|info| info.name == "f")
+            .expect("f should be in the signature");
+        assert_eq!(f.invertibility, Invertibility::Invertible);
+
+        let workspace = proof
+            .workspace
+            .expect("inverse show should select a workspace");
+        workspace
+            .diagram
+            .check(true)
+            .expect("inverse diagram should validate");
+        assert_eq!(workspace.diagram.dimension(), 1);
+    }
+
+    #[test]
+    fn invertible_composites_are_invertible() {
+        let result = compile(
+            "cell A; cell B; cell C; cell f: A <-> B; cell g: B <-> C; show inv(f * g);",
+            CompileOptions::default(),
+        );
+        assert!(result.is_ok(), "{:?}", result.diagnostics);
+        assert_eq!(result.selected.as_deref(), Some("inv(f * g)"));
+    }
+
+    #[test]
+    fn rejects_inverse_of_directed_diagrams() {
+        let result = compile(
+            "cell A; cell B; cell C; cell f: A <-> B; cell g: B -> C; show inv(f * g);",
+            CompileOptions::default(),
+        );
+        assert!(!result.is_ok());
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("only invertible diagrams")));
     }
 
     #[test]

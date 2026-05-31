@@ -126,16 +126,15 @@ schema RightAdjunction(A: cell<0>, B: cell<0>, F: cell<1>) {
 use RightAdjunction(A, B, F) as first;
 use RightAdjunction(A, B, F) as second;
 
-// The comparison maps are normally built from the units and counits.
-// V1 names them explicitly, then shows the higher witness that they invert.
-cell to_second: first.right -> second.right;
-cell to_first: second.right -> first.right;
-cell first_inverse: to_second * to_first -> id(first.right);
-cell second_inverse: to_first * to_second -> id(second.right);
+// The comparison map is normally built from the units and counits.
+// V1 names it explicitly, then uses invertibility to expose its formal inverse.
+cell to_second: first.right <-> second.right;
+cell first_inverse: to_second * inv(to_second) -> id(first.right);
+cell second_inverse: inv(to_second) * to_second -> id(second.right);
 
 show first_inverse;
 "#,
-        tags: &["proof", "adjunction", "3-cells"],
+        tags: &["proof", "adjunction", "invertible", "3-cells"],
     },
 ];
 
