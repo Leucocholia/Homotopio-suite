@@ -109,7 +109,7 @@ show first.witness;
         title: "Uniqueness of Adjunctions",
         category: "Proofs",
         description:
-            "A proof-shaped diagram: two right adjoints for one left adjoint are equivalent.",
+            "A constructed cancellation proof for the comparison between two right adjoints.",
         source: r#"title "Uniqueness of Adjunctions";
 abstract "Two right adjoints for the same left adjoint are unique up to equivalence.";
 
@@ -129,8 +129,8 @@ use RightAdjunction(A, B, F) as second;
 // The comparison map is normally built from the units and counits.
 // V1 names it explicitly, then uses invertibility to expose its formal inverse.
 cell to_second: first.right <-> second.right;
-cell first_inverse: to_second * inv(to_second) -> id(first.right);
-cell second_inverse: inv(to_second) * to_second -> id(second.right);
+prove first_inverse: to_second * inv(to_second) -> id(first.right);
+prove second_inverse: inv(to_second) * to_second -> id(second.right);
 
 show first_inverse;
 "#,

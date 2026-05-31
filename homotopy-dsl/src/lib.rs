@@ -5,7 +5,9 @@ use std::{
 };
 
 use homotopy_core::{
-    signature::Invertibility, Diagram, Diagram0, DiagramN, Generator, Orientation,
+    common::{Boundary, Direction},
+    signature::Invertibility,
+    Diagram, Diagram0, DiagramN, Generator, Orientation,
 };
 use homotopy_graphics::style::{Color, VertexShape};
 use homotopy_model::proof::{
@@ -74,6 +76,7 @@ pub enum Stmt {
         span: Span,
     },
     Cell(CellDecl),
+    Proof(ProofDecl),
     Schema(SchemaDecl),
     Use(UseDecl),
     Show {
@@ -103,6 +106,14 @@ pub struct SchemaDecl {
     pub name: String,
     pub params: Vec<Param>,
     pub body: Vec<Stmt>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProofDecl {
+    pub name: String,
+    pub source: Expr,
+    pub target: Expr,
     pub span: Span,
 }
 
@@ -392,6 +403,7 @@ impl<'a> Lexer<'a> {
         let ident = &self.source[start..self.cursor];
         let kind = match ident {
             "cell" => TokenKind::Keyword("cell"),
+            "prove" => TokenKind::Keyword("prove"),
             "schema" => TokenKind::Keyword("schema"),
             "macro" => TokenKind::Keyword("macro"),
             "use" => TokenKind::Keyword("use"),
@@ -481,6 +493,7 @@ impl Parser {
     fn parse_stmt(&mut self) -> Option<Stmt> {
         match &self.peek().kind {
             TokenKind::Keyword("cell") => self.parse_cell().map(Stmt::Cell),
+            TokenKind::Keyword("prove") => self.parse_proof().map(Stmt::Proof),
             TokenKind::Keyword("schema") | TokenKind::Keyword("macro") => {
                 self.parse_schema().map(Stmt::Schema)
             }
@@ -550,6 +563,22 @@ impl Parser {
                 None
             }
         }
+    }
+
+    fn parse_proof(&mut self) -> Option<ProofDecl> {
+        let start = self.bump().span;
+        let (name, _) = self.parse_name()?;
+        self.expect(TokenKind::Colon, "expected `:` after proof name")?;
+        let source = self.parse_expr()?;
+        self.expect(TokenKind::Arrow, "expected `->` in proof declaration")?;
+        let target = self.parse_expr()?;
+        let end = self.expect(TokenKind::Semicolon, "expected `;` after proof declaration")?;
+        Some(ProofDecl {
+            name,
+            source,
+            target,
+            span: start.join(end.span),
+        })
     }
 
     fn parse_schema(&mut self) -> Option<SchemaDecl> {
@@ -845,6 +874,7 @@ impl Compiler {
                 MetadataKey::Abstract => self.metadata.abstr = Some(value.clone()),
             },
             Stmt::Cell(decl) => self.compile_cell(decl, scope),
+            Stmt::Proof(decl) => self.compile_proof(decl, scope),
             Stmt::Use(decl) => self.compile_use(decl, scope),
             Stmt::Show { expr, span } => {
                 let Some(diagram) = self.compile_expr(expr, scope) else {
@@ -935,19 +965,41 @@ impl Compiler {
             name: public_name.clone(),
         };
         self.signature.insert_item(SignatureItem::Item(info));
-        let symbol = Symbol {
-            info: SymbolInfo {
-                name: public_name.clone(),
-                dimension: diagram.dimension(),
-                generator,
-            },
-            diagram,
-        };
 
         if scope.prefix.is_some() {
             scope.aliases.insert(decl.name.clone(), public_name.clone());
         }
-        self.symbols.insert(public_name, symbol);
+        self.insert_symbol(public_name, diagram);
+    }
+
+    fn compile_proof(&mut self, decl: &ProofDecl, scope: &mut Scope) {
+        let public_name = self.declared_name(&decl.name, scope);
+        if self.symbols.contains_key(&public_name) {
+            self.error(format!("duplicate symbol `{public_name}`"), decl.span);
+            return;
+        }
+
+        let Some(source) = self.compile_expr(&decl.source, scope) else {
+            return;
+        };
+        let Some(target) = self.compile_expr(&decl.target, scope) else {
+            return;
+        };
+        let Some(diagram) = self.construct_proof(&source, &target, decl.span) else {
+            return;
+        };
+        if let Err(error) = diagram.check(true) {
+            self.error(
+                format!("constructed proof failed validation: {error:?}"),
+                decl.span,
+            );
+            return;
+        }
+
+        if scope.prefix.is_some() {
+            scope.aliases.insert(decl.name.clone(), public_name.clone());
+        }
+        self.insert_symbol(public_name, diagram);
     }
 
     fn compile_use(&mut self, decl: &UseDecl, scope: &mut Scope) {
@@ -1008,6 +1060,59 @@ impl Compiler {
             self.compile_stmt(stmt, &mut child);
         }
         self.expansion_stack.pop();
+    }
+
+    fn construct_proof(
+        &mut self,
+        source: &Diagram,
+        target: &Diagram,
+        span: Span,
+    ) -> Option<Diagram> {
+        if source.dimension() != target.dimension() {
+            self.error(
+                format!(
+                    "proof source dimension {} does not match target dimension {}",
+                    source.dimension(),
+                    target.dimension()
+                ),
+                span,
+            );
+            return None;
+        }
+
+        let Ok(source) = DiagramN::try_from(source.clone()) else {
+            self.error("only positive-dimensional proofs can be constructed", span);
+            return None;
+        };
+        let source_diagram: Diagram = source.clone().into();
+
+        for boundary in [Boundary::Target, Boundary::Source] {
+            for direction in [Direction::Forward, Direction::Backward] {
+                for step in 0..source.size() {
+                    let mut path = [];
+                    let Ok(candidate) = source.clone().identity().contract(
+                        boundary.into(),
+                        &mut path,
+                        0,
+                        direction,
+                        step,
+                        None,
+                        &self.signature,
+                    ) else {
+                        continue;
+                    };
+                    if candidate.source() == source_diagram && candidate.target() == *target {
+                        return Some(candidate.into());
+                    }
+                }
+            }
+        }
+
+        self.error(
+            "could not construct proof using the built-in contraction rules",
+            span,
+        );
+        None
     }
 
     fn compile_expr(&mut self, expr: &Expr, scope: &Scope) -> Option<Diagram> {
@@ -1122,6 +1227,19 @@ impl Compiler {
         let generator = Generator::new(self.next_generator_id, dimension);
         self.next_generator_id += 1;
         generator
+    }
+
+    fn insert_symbol(&mut self, name: String, diagram: Diagram) {
+        let generator = diagram.max_generator().generator;
+        let symbol = Symbol {
+            info: SymbolInfo {
+                name: name.clone(),
+                dimension: diagram.dimension(),
+                generator,
+            },
+            diagram,
+        };
+        self.symbols.insert(name, symbol);
     }
 
     fn declared_name(&self, name: &str, scope: &Scope) -> String {
@@ -1299,6 +1417,52 @@ use Span(B, C) as second;
             .diagnostics
             .iter()
             .any(|d| d.message.contains("only invertible diagrams")));
+    }
+
+    #[test]
+    fn proves_inverse_cancellation_without_adding_axiom() {
+        let result = compile(
+            "cell A; cell B; cell f: A <-> B; prove cancel: f * inv(f) -> id(A); show cancel;",
+            CompileOptions::default(),
+        );
+        assert!(result.is_ok(), "{:?}", result.diagnostics);
+        assert_eq!(result.selected.as_deref(), Some("cancel"));
+
+        let proof = result.proof.expect("cancellation proof should compile");
+        let signature_names: Vec<_> = proof
+            .signature
+            .iter()
+            .map(|info| info.name.as_str())
+            .collect();
+        assert_eq!(signature_names, vec!["A", "B", "f"]);
+
+        let cancel = result
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name == "cancel")
+            .expect("constructed proof should still be a DSL symbol");
+        assert_eq!(cancel.dimension, 2);
+
+        let workspace = proof
+            .workspace
+            .expect("constructed proof should be selectable");
+        workspace
+            .diagram
+            .check(true)
+            .expect("constructed proof diagram should validate");
+    }
+
+    #[test]
+    fn rejects_unsupported_constructed_proofs() {
+        let result = compile(
+            "cell A; cell B; cell f: A -> B; prove impossible: f -> id(A); show impossible;",
+            CompileOptions::default(),
+        );
+        assert!(!result.is_ok());
+        assert!(result
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("could not construct proof")));
     }
 
     #[test]

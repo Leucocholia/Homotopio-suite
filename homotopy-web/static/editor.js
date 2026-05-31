@@ -67,7 +67,7 @@ Promise.all([
           return "comment";
         }
         if (stream.match(/"(?:[^"\\]|\\.)*"/)) return "string";
-        if (stream.match(/\b(?:cell|schema|macro|use|as|show|title|author|abstract|id|inv)\b/)) {
+        if (stream.match(/\b(?:cell|prove|schema|macro|use|as|show|title|author|abstract|id|inv)\b/)) {
           return "keyword";
         }
         if (stream.match(/[0-9]+/)) return "number";
