@@ -346,7 +346,7 @@ impl Component for Sidebar {
             <>
                 <aside class="sidebar">
                     <a href="#about">
-                        <img src="/logo.svg" alt="Homotopio Suite logo" class="sidebar__logo" />
+                        <img src="logo.svg" alt="Homotopio Suite logo" class="sidebar__logo" />
                     </a>
                     {self.nav(ctx)}
                     {self.tools(ctx)}

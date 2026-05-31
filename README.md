@@ -8,6 +8,8 @@ team, and should not be read as representing `beta.homotopy.io`.
 The goal of this fork is to explore a more source-driven and didactic diagram
 editor for larger, reusable homotopy.io-style diagrams.
 
+Public app: <https://leucocholia.github.io/Homotopio-suite/>
+
 ## What This Adds
 
 - A readable DSL for declaring cells, generative `struct`s, canonical
@@ -54,6 +56,10 @@ See [DSL.md](./DSL.md) for the v0.1 source-language reference.
 
 See [COMMUNITY_LIBRARY.md](./COMMUNITY_LIBRARY.md) for public preset submission
 instructions.
+
+The public web app is deployed by the `Deploy Pages` GitHub Actions workflow.
+Every push to `main` builds `homotopy-web` for `wasm32-unknown-unknown`,
+packages the static files, and publishes the result to GitHub Pages.
 
 Common local checks:
 
