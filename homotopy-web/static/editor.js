@@ -67,7 +67,7 @@ Promise.all([
           return "comment";
         }
         if (stream.match(/"(?:[^"\\]|\\.)*"/)) return "string";
-        if (stream.match(/\b(?:actions|attach|cell|construct|contract|folder|paper|prove|schema|property|struct|macro|use|as|with|show|title|author|abstract|id|inv)\b/)) {
+        if (stream.match(/\b(?:actions|attach|cell|construct|contract|folder|paper|prove|schema|property|struct|macro|use|unique|as|with|show|title|author|abstract|id|inv)\b/)) {
           return "keyword";
         }
         if (stream.match(/[0-9]+/)) return "number";

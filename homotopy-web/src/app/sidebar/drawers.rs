@@ -5,7 +5,7 @@ use super::{DrawerViewSize, Sidebar, SidebarButton, SidebarDrawer, SidebarMsg, S
 use crate::app::debug::DebugView;
 use crate::{
     app::{
-        community_library, image_export::ImageExportView, library::LibraryView, presets,
+        community_library, image_export::ImageExportView, info, library::LibraryView, presets,
         project::ProjectView, settings::SettingsView, signature::SignatureView,
         source::SourcePanel, stash::StashView,
     },
@@ -119,6 +119,14 @@ declare_sidebar_drawers! {
             />
         },
         min_width: 250,
+    }
+
+    DRAWER_HELP {
+        "Help",
+        "help-drawer",
+        "help_outline",
+        |_, _, _, _| info::get_help_message(),
+        min_width: 280,
     }
 
     DRAWER_LIBRARY {

@@ -10,15 +10,16 @@ editor for larger, reusable homotopy.io-style diagrams.
 
 ## What This Adds
 
-- A readable DSL for declaring cells, generative `struct`s, applicative
-  `schema`/`property` declarations, instantiations, and the diagram to show.
+- A readable DSL for declaring cells, generative `struct`s, canonical
+  applicative `property` declarations, instantiations, and the diagram to show.
 - A browser source editor powered by CodeMirror 6, with diagnostics and syntax
   highlighting.
 - Hygienic expansion for reusable diagram shapes. `struct` creates fresh
-  packaged data, while `schema`/`property` gives canonical instances for the
-  same arguments.
+  packaged data, while `property` gives canonical instances for the same
+  arguments. `schema` is still accepted as an alias.
 - A built-in reference library with presets for basics, adjunctions,
-  equivalences, braids, idempotent structures, proofs, and macro composition.
+  equivalences, braids, idempotent structures, property uniqueness, proofs, and
+  macro composition.
 - Per-preset didactic notes in the Library drawer, with an empty curated
   community preset lane ready for future reviewed examples.
 - A `.hio` project bundle format containing `manifest.json`, `proof.hom`,
@@ -48,6 +49,8 @@ For background on homotopy.io itself, see the
 
 See [DEVELOPMENT.md](./DEVELOPMENT.md) for local, Docker, and optional HiGHS
 solver build notes.
+
+See [DSL.md](./DSL.md) for the v0.1 source-language reference.
 
 See [COMMUNITY_LIBRARY.md](./COMMUNITY_LIBRARY.md) for public preset submission
 instructions.

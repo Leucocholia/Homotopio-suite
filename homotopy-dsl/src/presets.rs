@@ -88,6 +88,28 @@ show braid;
         tags: &["composition", "2-cells"],
     },
     Preset {
+        id: "property-uniqueness",
+        title: "Property Uniqueness",
+        category: "Properties",
+        description: "Materializes the canonicality of repeated property instances as proof symbols.",
+        lesson: "`property` is applicative: the same declaration applied to the same resolved arguments reuses one canonical instance. `unique` exposes that compiler fact as field-wise identity witnesses such as `same.loop`.",
+        source: r#"title "Property Uniqueness";
+abstract "Repeated property instances are canonical. The `unique` constructor turns that canonicality into visible proof symbols.";
+
+cell A;
+
+property Pointed(X: cell<0>) {
+  cell loop: X -> X;
+}
+
+use Pointed(A) as first;
+use Pointed(A) as second;
+unique first, second as same;
+show same.loop;
+"#,
+        tags: &["property", "unique", "canonical", "proof"],
+    },
+    Preset {
         id: "macro-composition",
         title: "Macro Composition",
         category: "Examples",
@@ -223,8 +245,8 @@ show commute;
         id: "paper-action-replay",
         title: "Paper Action Replay",
         category: "Specification",
-        description: "A low-level source form that replays the same proof actions as the default editor modes.",
-        lesson: "`actions [...]` exposes the underlying proof-action stream. It is intentionally low-level, but it keeps the DSL visibly grounded in the original homotopy.io specification.",
+        description: "An experimental low-level source form that replays the same proof actions as the default editor modes.",
+        lesson: "`actions [...]` is an experimental escape hatch for the underlying proof-action stream. It keeps the DSL visibly grounded in the original homotopy.io specification, but ordinary authoring should prefer cells, structures, properties, macros, and constructed proofs.",
         source: r#"actions [
   "CreateGeneratorZero",
   {"SelectGenerator":{"id":0,"dimension":0}},

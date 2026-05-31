@@ -1572,14 +1572,19 @@ svg {
   margin: auto;
   background-color: #f3f3f3;
   border: 1px #777 solid;
-  width: 680px;
-  height: 760px;
+  width: min(680px, calc(100vw - 48px));
+  height: auto;
+  max-height: calc(100vh - 72px);
   box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
   z-index: 1003;
   position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .modal-content > header {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1603,7 +1608,33 @@ svg {
 }
 
 .help {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 18px 20px;
+  box-sizing: border-box;
+  text-align: left;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.help h3 {
   text-align: center;
+}
+
+.help p {
+  margin: 0 0 14px;
+}
+
+.help pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  text-align: center;
+}
+
+.drawer.help-drawer .drawer__content {
+  padding: 0;
 }
 
 .help table {

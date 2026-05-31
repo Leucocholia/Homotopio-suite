@@ -9,6 +9,34 @@ pub fn get_help_message() -> Html {
                 {"Use the Library drawer for guided source presets, or the Source drawer to edit DSL directly. The original point-and-click tutorial is still included as "}
                 <a href="https://github.com/homotopy-io/homotopy-rs/blob/master/TUTORIAL.md">{"upstream reference material"}</a>{"."}
             </p>
+            <h3>{"DSL Reference"}</h3>
+            <p>
+                {"The v0.1 source language is documented in "}
+                <code>{"DSL.md"}</code>
+                {". Use "}
+                <code>{"property"}</code>
+                {" for canonical applicative data, "}
+                <code>{"struct"}</code>
+                {" for fresh packaged data, and "}
+                <code>{"macro"}</code>
+                {" for reusable source patterns. "}
+                <code>{"schema"}</code>
+                {" remains accepted as a property alias."}
+            </p>
+            <pre>
+                {"cell A;\ncell B;\ncell f: A <-> B;\nconstruct cancel: f * inv(f) <-> id(A);\nshow cancel;"}
+            </pre>
+            <p>
+                <code>{"unique first, second as same;"}</code>
+                {" creates field-wise identity witnesses for two aliases of the same canonical property instance. "}
+                <code>{"use Name(args) as alias with { field = existing; }"}</code>
+                {" fills a structure from existing cells. "}
+                <code>{"actions [...]"}</code>
+                {" is experimental and intended only as a low-level proof-action escape hatch."}
+            </p>
+            <pre>
+                {"unique first, second as same;\nshow same.loop;"}
+            </pre>
             <table>
                 <tr>
                     <td class="help-action"><Icon name="touch_app" size={IconSize::Icon24}/></td>

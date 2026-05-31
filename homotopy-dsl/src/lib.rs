@@ -26,10 +26,11 @@ pub mod presets;
 
 /// Names from the homotopy.io paper/default editor model that the DSL builds on.
 ///
-/// The readable `cell`/`struct`/`schema` syntax is sugar for ordinary signature
-/// diagrams and proof-state actions. The `actions [...]` source form below
-/// exposes the same `proof::Action` replay format used by the point-and-click
-/// editor, so source can represent anything the default modes can perform.
+/// The readable `cell`/`struct`/`property` syntax is sugar for ordinary
+/// signature diagrams and proof-state actions. `schema` is accepted as a
+/// compatibility alias for `property`. The `actions [...]` source form below is
+/// an experimental escape hatch exposing the same `proof::Action` replay format
+/// used by the point-and-click editor.
 pub mod spec {
     pub use homotopy_core::{
         common::{BoundaryPath, SliceIndex},
@@ -108,6 +109,7 @@ pub enum Stmt {
     Folder(FolderDecl),
     Declaration(DeclarationDecl),
     Use(UseDecl),
+    Unique(UniqueDecl),
     Show {
         expr: Expr,
         span: Span,
@@ -211,6 +213,14 @@ pub struct UseDecl {
     pub args: Vec<String>,
     pub alias: String,
     pub bindings: Vec<UseBinding>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UniqueDecl {
+    pub left: String,
+    pub right: String,
+    pub alias: String,
     pub span: Span,
 }
 
@@ -400,7 +410,7 @@ fn compile_action_source(source: &str, options: &CompileOptions) -> Option<Compi
                         proof: None,
                         diagnostics: vec![Diagnostic::error(
                             format!(
-                                "could not parse paper action list: {vector_error}; {tuple_error}"
+                                "could not parse experimental action list: {vector_error}; {tuple_error}"
                             ),
                             Span::new(0, source.len()),
                         )],
@@ -426,13 +436,13 @@ fn compile_action_source(source: &str, options: &CompileOptions) -> Option<Compi
             Ok(updated) => {
                 if !updated {
                     diagnostics.push(Diagnostic::error(
-                        format!("paper action {index} had no effect"),
+                        format!("experimental action {index} had no effect"),
                         Span::new(0, source.len()),
                     ));
                 }
             }
             Err(error) => diagnostics.push(Diagnostic::error(
-                format!("paper action {index} failed: {error}"),
+                format!("experimental action {index} failed: {error}"),
                 Span::new(0, source.len()),
             )),
         }
@@ -608,6 +618,7 @@ impl<'a> Lexer<'a> {
             "struct" => TokenKind::Keyword("struct"),
             "macro" => TokenKind::Keyword("macro"),
             "use" => TokenKind::Keyword("use"),
+            "unique" => TokenKind::Keyword("unique"),
             "with" => TokenKind::Keyword("with"),
             "as" => TokenKind::Keyword("as"),
             "show" => TokenKind::Keyword("show"),
@@ -709,6 +720,7 @@ impl Parser {
                 .parse_declaration(DeclarationKind::Macro)
                 .map(Stmt::Declaration),
             TokenKind::Keyword("use") => self.parse_use().map(Stmt::Use),
+            TokenKind::Keyword("unique") => self.parse_unique().map(Stmt::Unique),
             TokenKind::Keyword("show") => self.parse_show(),
             TokenKind::Keyword("title")
             | TokenKind::Keyword("author")
@@ -902,7 +914,10 @@ impl Parser {
     fn parse_declaration(&mut self, kind: DeclarationKind) -> Option<DeclarationDecl> {
         let start = self.bump().span;
         let (name, _) = self.parse_name()?;
-        self.expect(TokenKind::LParen, "expected `(` after declaration name")?;
+        self.expect(
+            TokenKind::LParen,
+            &format!("expected `(` after {} name", kind.noun()),
+        )?;
         let mut params = Vec::new();
         if !self.at(TokenKind::RParen) {
             loop {
@@ -994,6 +1009,25 @@ impl Parser {
             args,
             alias,
             bindings,
+            span: start.join(end.span),
+        })
+    }
+
+    fn parse_unique(&mut self) -> Option<UniqueDecl> {
+        let start = self.bump().span;
+        let (left, _) = self.parse_name()?;
+        self.expect(TokenKind::Comma, "expected `,` between property instances")?;
+        let (right, _) = self.parse_name()?;
+        self.expect_keyword("as", "expected `as` before uniqueness witness alias")?;
+        let (alias, _) = self.parse_name()?;
+        let end = self.expect(
+            TokenKind::Semicolon,
+            "expected `;` after uniqueness witness",
+        )?;
+        Some(UniqueDecl {
+            left,
+            right,
+            alias,
             span: start.join(end.span),
         })
     }
@@ -1197,7 +1231,7 @@ struct InstanceInfo {
 impl DeclarationKind {
     fn noun(self) -> &'static str {
         match self {
-            Self::Schema => "schema",
+            Self::Schema => "property",
             Self::Struct => "struct",
             Self::Macro => "macro",
         }
@@ -1247,6 +1281,7 @@ impl Compiler {
     fn compile_ast(&mut self, ast: &Ast) {
         let mut seen_declarations = HashSet::new();
         self.collect_declarations(&ast.statements, &mut seen_declarations);
+        self.validate_declarations();
 
         let mut scope = Scope::default();
         for stmt in &ast.statements {
@@ -1267,7 +1302,10 @@ impl Compiler {
                 Stmt::Declaration(schema) => {
                     if !seen_declarations.insert(schema.name.clone()) {
                         self.error(
-                            format!("duplicate declaration `{}`", schema.name),
+                            format!(
+                                "duplicate declaration `{}`; property, struct, and macro names share one namespace",
+                                schema.name
+                            ),
                             schema.span,
                         );
                     } else {
@@ -1292,6 +1330,7 @@ impl Compiler {
             Stmt::Proof(decl) => self.compile_proof(decl, scope),
             Stmt::Folder(decl) => self.compile_folder(decl, scope),
             Stmt::Use(decl) => self.compile_use(decl, scope),
+            Stmt::Unique(decl) => self.compile_unique(decl, scope),
             Stmt::Show { expr, span } => {
                 let Some(diagram) = self.compile_expr(expr, scope) else {
                     return;
@@ -1312,6 +1351,27 @@ impl Compiler {
                     ),
                     decl.span,
                 );
+            }
+        }
+    }
+
+    fn validate_declarations(&mut self) {
+        let declarations = self.declarations.clone();
+        for declaration in declarations.values() {
+            for param in &declaration.params {
+                let ParamType::Structure(name) = &param.ty else {
+                    continue;
+                };
+                if !declarations.contains_key(name) {
+                    self.error(
+                        format!(
+                            "unbound structure parameter type `{name}` in {} `{}`",
+                            declaration.kind.noun(),
+                            declaration.name
+                        ),
+                        param.span,
+                    );
+                }
             }
         }
     }
@@ -1743,7 +1803,10 @@ impl Compiler {
         let declaration_name = self.resolve_name(&decl.declaration, scope);
         let Some(schema) = self.declarations.get(&declaration_name).cloned() else {
             self.error(
-                format!("unknown declaration `{}`", decl.declaration),
+                format!(
+                    "unknown property, struct, or macro declaration `{}`",
+                    decl.declaration
+                ),
                 decl.span,
             );
             return;
@@ -1752,7 +1815,7 @@ impl Compiler {
         if self.expansion_stack.contains(&schema.name) {
             self.error(
                 format!(
-                    "recursive declaration expansion involving `{}`",
+                    "recursive declaration expansion involving `{}` is not supported in DSL v0.1",
                     schema.name
                 ),
                 decl.span,
@@ -1796,7 +1859,7 @@ impl Compiler {
                 ParamType::Cell(dimension) => {
                     let resolved_arg = self.resolve_name(arg, scope);
                     let Some(symbol) = self.symbols.get(&resolved_arg) else {
-                        self.error(format!("unknown argument `{arg}`"), param.span);
+                        self.error(format!("unknown cell argument `{arg}`"), decl.span);
                         return;
                     };
                     if symbol.info.dimension != *dimension {
@@ -1805,7 +1868,7 @@ impl Compiler {
                                 "argument `{arg}` has dimension {}, expected {}",
                                 symbol.info.dimension, dimension
                             ),
-                            param.span,
+                            decl.span,
                         );
                         return;
                     }
@@ -1815,7 +1878,10 @@ impl Compiler {
                 ParamType::Structure(expected) => {
                     let resolved_arg = self.resolve_instance_name(arg, scope);
                     let Some(instance) = self.instances.get(&resolved_arg).cloned() else {
-                        self.error(format!("unknown structure argument `{arg}`"), param.span);
+                        self.error(
+                            format!("unknown structure argument `{arg}` for `{expected}`"),
+                            decl.span,
+                        );
                         return;
                     };
                     if instance.declaration != *expected {
@@ -1824,7 +1890,7 @@ impl Compiler {
                                 "structure argument `{arg}` has type `{}`, expected `{expected}`",
                                 instance.declaration
                             ),
-                            param.span,
+                            decl.span,
                         );
                         return;
                     }
@@ -1899,15 +1965,23 @@ impl Compiler {
         scope: &Scope,
     ) -> Option<HashMap<String, ProvidedBinding>> {
         let direct_fields = Self::direct_field_names(&declaration.body);
+        let mut sorted_fields: Vec<_> = direct_fields.iter().cloned().collect();
+        sorted_fields.sort();
+        let field_hint = if sorted_fields.is_empty() {
+            "it has no directly fillable fields".to_owned()
+        } else {
+            format!("fillable fields are: {}", sorted_fields.join(", "))
+        };
         let mut bindings = HashMap::new();
         for binding in &decl.bindings {
             if !direct_fields.contains(&binding.field) {
                 self.error(
                     format!(
-                        "{} `{}` has no directly fillable field `{}`",
+                        "{} `{}` has no directly fillable field `{}`; {}",
                         declaration.kind.noun(),
                         declaration.name,
-                        binding.field
+                        binding.field,
+                        field_hint
                     ),
                     binding.span,
                 );
@@ -1932,6 +2006,186 @@ impl Compiler {
             );
         }
         Some(bindings)
+    }
+
+    fn compile_unique(&mut self, decl: &UniqueDecl, scope: &mut Scope) {
+        let left_name = self.resolve_instance_name(&decl.left, scope);
+        let Some(left) = self.instances.get(&left_name).cloned() else {
+            self.error(
+                format!("unknown property instance `{}`", decl.left),
+                decl.span,
+            );
+            return;
+        };
+
+        let right_name = self.resolve_instance_name(&decl.right, scope);
+        let Some(right) = self.instances.get(&right_name).cloned() else {
+            self.error(
+                format!("unknown property instance `{}`", decl.right),
+                decl.span,
+            );
+            return;
+        };
+
+        if left.declaration != right.declaration {
+            self.error(
+                format!(
+                    "property uniqueness requires instances of the same declaration, got `{}` and `{}`",
+                    left.declaration, right.declaration
+                ),
+                decl.span,
+            );
+            return;
+        }
+
+        let Some(declaration) = self.declarations.get(&left.declaration).cloned() else {
+            self.error(
+                format!(
+                    "unknown declaration `{}` for property instance `{}`",
+                    left.declaration, decl.left
+                ),
+                decl.span,
+            );
+            return;
+        };
+        if !declaration.kind.is_applicative() {
+            self.error(
+                format!(
+                    "`unique` only applies to property instances; `{}` is a {}",
+                    declaration.name,
+                    declaration.kind.noun()
+                ),
+                decl.span,
+            );
+            return;
+        }
+
+        if left.canonical_prefix != right.canonical_prefix {
+            self.error(
+                format!(
+                    "`{}` and `{}` are not the same canonical property instance",
+                    decl.left, decl.right
+                ),
+                decl.span,
+            );
+            return;
+        }
+
+        let public_alias = self.declared_name(&decl.alias, scope);
+        let public_prefix = format!("{public_alias}.");
+        if self.instances.contains_key(&public_alias)
+            || self.symbols.contains_key(&public_alias)
+            || self
+                .symbols
+                .keys()
+                .any(|name| name.starts_with(&public_prefix))
+        {
+            self.error(
+                format!("duplicate uniqueness witness `{public_alias}`"),
+                decl.span,
+            );
+            return;
+        }
+
+        let param_names: HashSet<_> = declaration
+            .params
+            .iter()
+            .map(|param| param.name.as_str())
+            .collect();
+        let fields: Vec<_> = left
+            .aliases
+            .iter()
+            .filter(|(field, _)| {
+                field
+                    .split('.')
+                    .next()
+                    .is_some_and(|root| !param_names.contains(root))
+            })
+            .map(|(field, target)| (field.clone(), target.clone()))
+            .collect();
+
+        if fields.is_empty() {
+            self.error(
+                format!(
+                    "property `{}` has no generated fields to witness",
+                    declaration.name
+                ),
+                decl.span,
+            );
+            return;
+        }
+
+        for (field, left_target) in fields {
+            let Some(right_target) = right.aliases.get(&field) else {
+                self.error(
+                    format!("property instance `{}` has no field `{field}`", decl.right),
+                    decl.span,
+                );
+                return;
+            };
+
+            let Some(left_diagram) = self
+                .symbols
+                .get(&left_target)
+                .map(|symbol| symbol.diagram.clone())
+            else {
+                self.error(
+                    format!(
+                        "property instance `{}` field `{field}` resolved to unknown symbol `{left_target}`",
+                        decl.left
+                    ),
+                    decl.span,
+                );
+                return;
+            };
+            let Some(right_diagram) = self
+                .symbols
+                .get(right_target)
+                .map(|symbol| symbol.diagram.clone())
+            else {
+                self.error(
+                    format!(
+                        "property instance `{}` field `{field}` resolved to unknown symbol `{right_target}`",
+                        decl.right
+                    ),
+                    decl.span,
+                );
+                return;
+            };
+
+            if left_diagram != right_diagram {
+                self.error(
+                    format!(
+                        "property field `{field}` differs between `{}` and `{}`",
+                        decl.left, decl.right
+                    ),
+                    decl.span,
+                );
+                return;
+            }
+
+            let witness_name = format!("{public_alias}.{field}");
+            if self.symbols.contains_key(&witness_name) {
+                self.error(format!("duplicate symbol `{witness_name}`"), decl.span);
+                return;
+            }
+
+            let witness_diagram: Diagram = left_diagram.identity().into();
+            if let Err(error) = witness_diagram.check(true) {
+                self.error(
+                    format!("uniqueness witness failed validation: {error:?}"),
+                    decl.span,
+                );
+                return;
+            }
+
+            if scope.prefix.is_some() {
+                scope
+                    .aliases
+                    .insert(format!("{}.{}", decl.alias, field), witness_name.clone());
+            }
+            self.insert_symbol(witness_name, witness_diagram, Invertibility::Invertible);
+        }
     }
 
     fn direct_field_names(body: &[Stmt]) -> HashSet<String> {
@@ -2116,7 +2370,9 @@ impl Compiler {
         }
 
         self.error(
-            "could not construct proof from existing cells and built-in contraction rules",
+            format!(
+                "could not construct proof from existing cells and built-in contraction rules within depth {MAX_PROOF_SEARCH_DEPTH} and {MAX_PROOF_SEARCH_NODES} states"
+            ),
             span,
         );
         None
@@ -2473,6 +2729,42 @@ impl Compiler {
 mod tests {
     use super::*;
 
+    fn dsl_reference_blocks() -> Vec<(String, String)> {
+        let mut blocks = Vec::new();
+        let mut current: Option<(String, String)> = None;
+        for line in include_str!("../../DSL.md").lines() {
+            if let Some(info) = line.strip_prefix("```homl") {
+                current = Some((info.trim().to_owned(), String::new()));
+                continue;
+            }
+            if line == "```" {
+                if let Some((info, source)) = current.take() {
+                    blocks.push((info, source));
+                }
+                continue;
+            }
+            if let Some((_, source)) = &mut current {
+                source.push_str(line);
+                source.push('\n');
+            }
+        }
+        blocks
+    }
+
+    fn assert_diagnostic(source: &str, expected: &str) {
+        let result = compile(source, CompileOptions::default());
+        assert!(!result.is_ok(), "program unexpectedly compiled: {source}");
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.message.contains(expected)
+                    && diagnostic.span.end >= diagnostic.span.start),
+            "expected diagnostic containing `{expected}`, got {:?}",
+            result.diagnostics
+        );
+    }
+
     const ADJUNCTION: &str = r#"
 title "Adjunction";
 cell A;
@@ -2503,6 +2795,38 @@ show adj.unit;
         )
         .unwrap();
         assert_eq!(ast.statements.len(), 5);
+    }
+
+    #[test]
+    fn dsl_reference_examples_are_current() {
+        let blocks = dsl_reference_blocks();
+        assert!(!blocks.is_empty(), "DSL.md should contain homl examples");
+
+        for (info, source) in blocks {
+            let result = compile(&source, CompileOptions::default());
+            if info.starts_with("compile") {
+                assert!(
+                    result.is_ok(),
+                    "DSL.md example `{info}` should compile:\n{source}\n{:?}",
+                    result.diagnostics
+                );
+            } else if info.starts_with("error") {
+                assert!(
+                    !result.is_ok(),
+                    "DSL.md example `{info}` should fail:\n{source}"
+                );
+                assert!(
+                    result
+                        .diagnostics
+                        .iter()
+                        .all(|diagnostic| diagnostic.span.end >= diagnostic.span.start),
+                    "diagnostic spans should be well-formed: {:?}",
+                    result.diagnostics
+                );
+            } else {
+                panic!("unknown DSL.md homl example kind `{info}`");
+            }
+        }
     }
 
     #[test]
@@ -2538,6 +2862,77 @@ show adj.unit;
         assert!(names.contains(&"first.loop"));
         assert!(!names.contains(&"second.loop"));
         assert_eq!(result.selected.as_deref(), Some("first.loop"));
+    }
+
+    #[test]
+    fn unique_witnesses_property_canonicality() {
+        let result = compile(
+            r#"
+            cell A;
+
+            property Pointed(X: cell<0>) {
+              cell loop: X -> X;
+            }
+
+            use Pointed(A) as first;
+            use Pointed(A) as second;
+            unique first, second as same;
+            show inv(same.loop);
+            "#,
+            CompileOptions::default(),
+        );
+        assert!(result.is_ok(), "{:?}", result.diagnostics);
+        let names: Vec<_> = result.symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"first.loop"));
+        assert!(!names.contains(&"second.loop"));
+        assert!(names.contains(&"same.loop"));
+        assert!(!names.contains(&"same.X"));
+        assert_eq!(result.selected.as_deref(), Some("inv(same.loop)"));
+
+        let proof = result
+            .proof
+            .expect("unique property program should compile");
+        let signature_names: Vec<_> = proof
+            .signature
+            .iter()
+            .map(|info| info.name.as_str())
+            .collect();
+        assert_eq!(signature_names, vec!["A", "first.loop"]);
+
+        let workspace = proof
+            .workspace
+            .expect("unique witness should be selectable");
+        workspace
+            .diagram
+            .check(true)
+            .expect("unique witness diagram should validate");
+        assert_eq!(workspace.diagram.dimension(), 2);
+    }
+
+    #[test]
+    fn rejects_invalid_unique_witnesses() {
+        assert_diagnostic(
+            r#"
+            cell A;
+            struct Pointed(X: cell<0>) { cell loop: X -> X; }
+            use Pointed(A) as first;
+            use Pointed(A) as second;
+            unique first, second as same;
+            "#,
+            "`unique` only applies to property instances",
+        );
+
+        assert_diagnostic(
+            r#"
+            cell A;
+            cell B;
+            property Pointed(X: cell<0>) { cell loop: X -> X; }
+            use Pointed(A) as first;
+            use Pointed(B) as second;
+            unique first, second as same;
+            "#,
+            "not the same canonical property instance",
+        );
     }
 
     #[test]
@@ -2735,7 +3130,7 @@ use Span(B, C) as second;
     #[test]
     fn proves_inverse_cancellation_without_adding_axiom() {
         let result = compile(
-            "cell A; cell B; cell f: A <-> B; prove cancel: f * inv(f) -> id(A); show cancel;",
+            "cell A; cell B; cell f: A <-> B; prove cancel: f * inv(f) <-> id(A); show cancel;",
             CompileOptions::default(),
         );
         assert!(result.is_ok(), "{:?}", result.diagnostics);
@@ -2778,7 +3173,7 @@ use Span(B, C) as second;
     #[test]
     fn rejects_inverse_of_directed_constructed_proofs() {
         let result = compile(
-            "cell A; cell B; cell f: A <-> B; prove cancel: f * inv(f) -> id(A); show inv(cancel);",
+            "cell A; cell B; cell f: A <-> B; prove directed_cancel: f * inv(f) -> id(A); show inv(directed_cancel);",
             CompileOptions::default(),
         );
         assert!(!result.is_ok());
@@ -2833,7 +3228,7 @@ use Span(B, C) as second;
             cell f: A <-> B;
 
             folder Equivalences {
-              construct cancel: f * inv(f) -> id(A);
+              construct cancel: f * inv(f) <-> id(A);
               cell witness: id(A) -> f * inv(f);
             }
 
@@ -2962,6 +3357,92 @@ use Span(B, C) as second;
             .diagnostics
             .iter()
             .any(|d| d.message.contains("recursive declaration")));
+    }
+
+    #[test]
+    fn reports_documented_diagnostic_classes() {
+        assert_diagnostic(
+            "property Same() {} struct Same() {} use Same() as same;",
+            "duplicate declaration",
+        );
+        assert_diagnostic(
+            "use Missing() as missing;",
+            "unknown property, struct, or macro",
+        );
+        assert_diagnostic("cell A; show missing;", "unknown symbol");
+        assert_diagnostic(
+            "cell A; cell B; cell f: A -> B; cell bad: A -> f;",
+            "source dimension",
+        );
+        assert_diagnostic(
+            r#"
+            cell A;
+            struct Endomorphism(X: cell<0>) { cell map: X -> X; }
+            use Endomorphism(A) as endo with { missing = A; }
+            "#,
+            "has no directly fillable field",
+        );
+        assert_diagnostic(
+            r#"
+            cell A;
+            cell existing: A -> A;
+            struct Endomorphism(X: cell<0>) { cell map: X -> X; }
+            use Endomorphism(A) as endo with { map = id(existing); }
+            "#,
+            "`with` bindings must name",
+        );
+        assert_diagnostic(
+            r#"
+            cell A;
+            cell existing: A -> A;
+            struct Idempotent(X: cell<0>) {
+              cell map: X -> X;
+              cell square: map * map <-> map;
+            }
+            use Idempotent(A) as bad with {
+              map = existing;
+              square = existing;
+            }
+            "#,
+            "expects an invertible cell",
+        );
+        assert_diagnostic(
+            "cell A; struct NeedsMissing(I: Missing) {} use NeedsMissing(A) as bad;",
+            "unbound structure parameter type",
+        );
+        assert_diagnostic(
+            r#"
+            cell A;
+            struct Left(X: cell<0>) { cell l: X -> X; }
+            struct Right(X: cell<0>) { cell r: X -> X; }
+            struct NeedsLeft(I: Left) { cell witness: I.l -> I.l; }
+            use Right(A) as right;
+            use NeedsLeft(right) as bad;
+            "#,
+            "structure argument `right` has type `Right`, expected `Left`",
+        );
+        assert_diagnostic(
+            "cell A; property Loop(X: cell<0>) { use Loop(X) as next; } use Loop(A) as loop;",
+            "recursive declaration",
+        );
+        assert_diagnostic(
+            "cell A; cell B; cell f: A -> B; construct impossible: f -> id(A); show impossible;",
+            "could not construct proof",
+        );
+        assert_diagnostic(
+            r#"
+            cell A;
+            struct Pointed(X: cell<0>) { cell loop: X -> X; }
+            use Pointed(A) as first;
+            use Pointed(A) as second;
+            unique first, second as same;
+            "#,
+            "`unique` only applies to property instances",
+        );
+        assert_diagnostic(
+            r#"actions [{"DefinitelyNotAnAction":true}]"#,
+            "could not parse experimental action list",
+        );
     }
 
     #[test]
