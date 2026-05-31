@@ -1160,9 +1160,9 @@ checksum = "5971ac85611da7067dbfcabef3c70ebb5606018acd9e2a3903a0da507521e0d5"
 
 [[package]]
 name = "hashconsing"
-version = "1.6.0"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5db5cf49adccdcbcf3ff805730e5c8cca5c8576db4436afc2775ee4c75648223"
+checksum = "29f60922eba3ff12d5899c50110a9e3919afc3ffbe75451df61edc996b1d2038"
 dependencies = [
  "lazy_static",
 ]
